@@ -1,0 +1,23 @@
+# MinerU for PDF processing
+# Note: MinerU installation can be complex and may require additional system dependencies
+# See: https://github.com/opendatalab/MinerU for installation instructions
+
+# Core MinerU package
+magic-pdf>=0.7.0
+
+# MarkItDown for other document formats (placeholder for future implementation)
+markitdown>=0.1.0
+
+# Additional dependencies for document processing
+Pillow>=10.0.0  # Image processing
+pandas>=2.0.0   # Table data handling
+numpy>=1.24.0   # Numerical operations
+
+# Optional OCR dependencies (for MinerU OCR functionality)
+# paddlepaddle>=2.5.0
+# paddleocr>=2.7.0
+
+# Note: Some dependencies may require system-level packages:
+# - For Ubuntu/Debian: apt-get install libgl1-mesa-glx libglib2.0-0
+# - For macOS: brew install opencv
+# - For Windows: Additional Visual C++ redistributables may be needed

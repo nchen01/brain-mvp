@@ -1,0 +1,80 @@
+BRAIN MVP - PROMPT HISTORY LOG
+================================
+
+Timestamp: 2025-01-12 (Initial Session)
+
+PROMPT 1:
+User: "You are a software engineer in charge of this next spring where we will be building out a minimum viable product of what will be referred to as the "brain." During this sprint, you will keep a log of all prompting history in a text file, keep a log of development, create different phases of the project, and define all the key classes at the beginning. The libraries that will be used will be: uv, python, langGraph + pydanticAI, lightRag, docker, api, DB in different docker."
+
+RESPONSE 1:
+Created comprehensive requirements document with 7 main requirements covering prompt logging, development tracking, project phases, class definitions, tech stack integration, API/DB architecture, and data integrity.
+
+PROMPT 2:
+User: "For the design document, I will spec out the flow for you in a later uploaded photo. First I will describe the "brain" with 4 main parts: 1. DocForge - DOC processes and DB 2. QueryReactor - intelligent QA system 3. DBM - DB management system 4. AccountMatrix - account management systems and access control. Make sure all these promps are documents in a file."
+
+RESPONSE 2:
+Creating design document with the four main components and establishing prompt documentation file.
+
+PROMPT 3:
+User: "Document Registration Process: Check if the document is new.- If the document already exists, save it to the Raw Document DB (Temporary Storage).- If it is a new document:- Generate and register a UUID for the document.- Record the metadata (e.g., timestamp, file name, file type, user information, etc.) in both the Raw Document Register Table and the Raw Document DB. Document Pre-Processing Router: This component examines the metadata of each incoming file and routes it to the appropriate downstream processor (e.g., PDF, other file types) based on predefined rules. Processor: PDF Processor: MinerU https://github.com/opendatalab/MinerU All other: MarkItDown https://github.com/microsoft/markitdown docling https://github.com/docling-project/docling Post processor: modify the output of Processor into a uniformed format -> Meta Data of Doc The Meta Data of Doc may have many files. Meta Doc Database: files of Docs, Doc UUID, File UUID, file name file type, labels"
+
+RESPONSE 3:
+User provided detailed document processing workflow with two flow diagrams showing:
+1. Document pre-processing pipeline with registration, routing, and processing stages
+2. Complete document flow from pre-process through RAG database preparation
+Updating design document to incorporate this detailed DocForge architecture.PROMPT
+ 4:
+User: "For the raw doc db and meta DOC DB: Raw Document Database: Stores original document files, one file per document. Raw Document Register Table (SQL): Stores document metadata like UUID, path, type, time, user, and labels. Raw Document Database (Temp): Temporary storage to detect duplicates before final upload, supports auto-clean or manual review. Meta Document Database: Stores processed outputs (e.g., metadata, images, tables) from one document, sharing the same docUUID but with different metaFileUUIDs. Meta Document Register Table (SQL): Stores metadata file paths and associated metadata records for each processed component."
+
+RESPONSE 4:
+Updating design document with detailed database specifications for Raw Document Database, Raw Document Register Table, temporary storage, Meta Document Database, and Meta Document Register Table with proper UUID relationships.PROMPT 5
+:
+User: "This is for document post processing router: This module determines the appropriate post-processing path for each document based on its metadata. If additional decision logic is required, it queries the Post-Process KM DB to retrieve relevant rules, and routes the document to one or multiple downstream processors accordingly. Post-Processing Modules: The post-processing modules may perform one or more of the following steps: 1. Determine Document Chunking Strategy - Analyze the document structure and decide how it should be segmented or "chunked" for downstream processing (e.g., by paragraph, section, sentence, or topic). 2. Post-Process Document Content - 2.1 Expand Abbreviations - Automatically identify abbreviations in the document and insert their corresponding full forms into the original text for clarity."
+
+RESPONSE 5:
+Adding detailed post-processing router specifications with KM DB integration, chunking strategies, and content enhancement features like abbreviation expansion.PROMPT 6:
+
+User: "Post-Process KM DB & Post Doc Database: Post-Process KM DB: Stores routing rules used by the Document Post-Process Router to determine processing paths. Post Document Database: Stores multiple post-processed versions (sets) of each document, representing different processing methods. Post Document Register Table: SQL table storing metadata of post-processed documents; documents share the same docUUID, but have different setUUIDs, and each set may contain multiple files with unique fileUUIDs and file paths."
+
+RESPONSE 6:
+Final update to design document with complete database architecture including Post-Process KM DB for routing rules, Post Document Database for multiple processing versions, and Post Document Register Table with docUUID/setUUID/fileUUID relationships.PROM
+PT 7:
+User: "To clarify: the MVP will only need DocForge and QueryReactor to be usable so we will focus on that. Feel free to use any dummy modules for the DBM and accountmatrix. Make sure to keep everything very well tracked to know which ones are dummy and which ones are not."
+
+RESPONSE 7:
+Updating design to clearly distinguish MVP scope - DocForge and QueryReactor as core components, DBM and AccountMatrix as dummy modules. Creating implementation plan focused on MVP functionality.P
+ROMPT 8:
+User: "Regarding the final port to the docker, let's keep that as a final task. We can containerize it and port it to the docker as one of the final tasks instead."
+
+RESPONSE 8:
+Updating implementation plan to move Docker containerization to the final tasks, allowing for native development and testing before containerization.P
+ROMPT 9:
+User: "For our processors, make sure that we use minerU for pdf. For excel, powerpoint, etc. use markitdown... we will skip docling for now. The most important part of pre-processing will be after it is processed, we need to make sure the format of the output of minerU and markitdown are the same"
+
+RESPONSE 9:
+Updating design and tasks to use MinerU for PDFs, MarkItDown for Excel/PowerPoint/other formats, removing Docling, and emphasizing uniform output formatting as critical requirement.PROMPT 1
+0:
+User: "For this first sprint, let's divide it into pre and post processing. Let's change the tasks so that we focus just on the preprocessing pipeline and get the document management and output organization working."
+
+RESPONSE 10:
+Restructuring implementation plan to focus Sprint 1 on preprocessing pipeline only - document registration, routing, processing (MinerU/MarkItDown), and standardized output organization. Post-processing and QueryReactor moved to future sprints.PRO
+MPT 11:
+User: "Actually add sprint 2 into sprint 1. Make sure you read the github for lightrag and understand how to do the Retrieval-Augmented Generation."
+
+RESPONSE 11:
+Researching LightRAG GitHub repository to understand RAG implementation, then merging Sprint 2 post-processing tasks into Sprint 1 for a complete preprocessing + post-processing pipeline.PR
+OMPT 12:
+User: "For this project documentation, please add: project.md for file structure and module documentation readme.md for users to understand how to use the application"
+
+RESPONSE 12:
+Creating comprehensive project documentation with project.md for technical file structure and module documentation, and readme.md for user-facing application usage instructions.PROM
+PT 13:
+User: "Before implementation, let's make sure for docforge pre-process that the documents all have the ability to be traced. Each document that comes out will have their own updated uuid but make sure that despite having different hashes, that there is still traceability so that if i wanted to edit an old version i can trace it. If i want to delete an old version for privacy purposes, my current document can show all prior versions as well."
+
+RESPONSE 13:
+Adding comprehensive document versioning and traceability system to design. Creating document lineage tracking with version chains, allowing for editing old versions, privacy-focused deletion, and complete version history visibility.P
+ROMPT 14:
+User: "update the project.md and the tasks.md to reflect the new changes."
+
+RESPONSE 14:
+Updating project.md and tasks.md to incorporate the comprehensive document versioning and traceability system with lineage tracking, version branching, and privacy-focused deletion capabilities.

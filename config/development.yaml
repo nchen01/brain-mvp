@@ -1,0 +1,41 @@
+# Development environment configuration
+# Overrides base configuration for development
+
+app:
+  debug: true
+  workers: 1
+
+database:
+  name: "docforge_dev"
+  user: "dev_user"
+  password: "dev_password"
+  echo: true  # Enable SQL logging in development
+
+storage:
+  base_path: "storage/dev"
+  max_file_size: 52428800  # 50MB for development
+  backup_enabled: false  # Disable backups in development
+
+processing:
+  max_workers: 2  # Fewer workers for development
+  timeout: 600    # Longer timeout for debugging
+
+logging:
+  level: "DEBUG"
+  console_enabled: true
+  file_enabled: true
+
+monitoring:
+  enabled: true
+  performance_tracking: true
+
+cache:
+  backend: "memory"
+  ttl: 1800  # Shorter TTL for development
+
+# Development-specific settings
+development:
+  auto_reload: true
+  profiling_enabled: true
+  test_data_enabled: true
+  mock_external_services: true

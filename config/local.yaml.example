@@ -1,0 +1,43 @@
+# Local configuration overrides
+# Copy this file to local.yaml and customize for your local environment
+# This file should NOT be committed to version control
+
+# Example local overrides
+app:
+  debug: true
+  port: 8001  # Use different port if 8000 is occupied
+
+database:
+  host: "localhost"
+  port: 5433  # Custom PostgreSQL port
+  name: "my_docforge_db"
+  user: "my_user"
+  password: "my_password"
+
+storage:
+  base_path: "/Users/myuser/docforge_storage"
+
+logging:
+  level: "DEBUG"
+  console_enabled: true
+
+# Personal API keys (keep these secret!)
+external_services:
+  openai_api_key: "sk-your-openai-key-here"
+  anthropic_api_key: "your-anthropic-key-here"
+  huggingface_token: "your-hf-token-here"
+
+# Custom security settings
+security:
+  secret_key: "your-very-secure-secret-key-at-least-32-chars-long"
+
+# Redis for local development
+cache:
+  backend: "redis"
+  redis_url: "redis://localhost:6379/1"
+
+# Local development features
+development:
+  auto_reload: true
+  profiling_enabled: true
+  test_data_enabled: true

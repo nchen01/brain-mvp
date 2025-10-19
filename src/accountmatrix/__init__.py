@@ -1,0 +1,1 @@
+"""AccountMatrix - Account management (Dummy implementation for MVP)."""

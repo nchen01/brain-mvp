@@ -1,0 +1,1 @@
+"""DocForge - Document processing pipeline."""

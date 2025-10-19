@@ -1,0 +1,73 @@
+# Production environment configuration
+# Overrides base configuration for production
+
+app:
+  debug: false
+  workers: 4
+  host: "0.0.0.0"
+  port: 8000
+
+database:
+  # Database credentials should be set via environment variables in production
+  pool_size: 20
+  max_overflow: 40
+  pool_timeout: 60
+  pool_recycle: 7200
+  echo: false
+
+storage:
+  base_path: "/var/lib/docforge/storage"
+  max_file_size: 209715200  # 200MB
+  backup_enabled: true
+  backup_retention_days: 90
+
+processing:
+  max_workers: 8
+  timeout: 300
+
+security:
+  # Secret key MUST be set via environment variables
+  jwt_expiration: 1800  # Shorter expiration in production
+  max_login_attempts: 3
+  lockout_duration: 1800
+  enable_2fa: true
+
+logging:
+  level: "INFO"
+  format: "json"  # Structured logging for production
+  file_enabled: true
+  console_enabled: false  # Disable console logging in production
+  max_file_size: 52428800  # 50MB
+  backup_count: 10
+  log_dir: "/var/log/docforge"
+
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  health_check_interval: 15
+  performance_tracking: true
+  alert_thresholds:
+    cpu_usage: 70.0
+    memory_usage: 80.0
+    disk_usage: 85.0
+    response_time: 2.0
+
+external_services:
+  timeout: 15  # Shorter timeout in production
+  max_retries: 2
+  retry_delay: 0.5
+
+cache:
+  enabled: true
+  backend: "redis"
+  ttl: 7200
+  max_size: 10000
+  # Redis URL should be set via environment variables
+
+# Production-specific settings
+production:
+  ssl_enabled: true
+  cors_enabled: false
+  rate_limiting_enabled: true
+  audit_logging_enabled: true
+  backup_encryption_enabled: true

@@ -1,0 +1,53 @@
+# Testing environment configuration
+# Overrides base configuration for testing
+
+app:
+  debug: true
+  workers: 1
+
+database:
+  name: "docforge_test"
+  user: "test_user"
+  password: "test_password"
+  pool_size: 5
+  echo: false  # Disable SQL logging during tests
+
+storage:
+  base_path: "storage/test"
+  max_file_size: 10485760  # 10MB for testing
+  backup_enabled: false
+  temp_dir: "temp/test"
+
+processing:
+  max_workers: 1  # Single worker for predictable testing
+  timeout: 60     # Shorter timeout for tests
+  chunk_size: 500 # Smaller chunks for faster tests
+
+rag:
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  max_results: 5  # Fewer results for testing
+
+logging:
+  level: "WARNING"  # Reduce log noise during testing
+  file_enabled: false
+  console_enabled: false
+
+monitoring:
+  enabled: false  # Disable monitoring during tests
+  performance_tracking: false
+
+external_services:
+  timeout: 5
+  max_retries: 1
+  retry_delay: 0.1
+
+cache:
+  enabled: false  # Disable caching for predictable tests
+
+# Testing-specific settings
+testing:
+  use_test_database: true
+  cleanup_after_tests: true
+  mock_external_services: true
+  fast_mode: true
+  parallel_tests: false
