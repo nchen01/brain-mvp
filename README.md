@@ -4,39 +4,47 @@
 
 Brain MVP is an AI-powered document processing and retrieval system that transforms your documents into a searchable, intelligent knowledge base. Upload documents in various formats (PDF, Excel, PowerPoint, etc.) and get them processed, enhanced, and prepared for intelligent querying.
 
-## Quick Start
+## 🚀 Quick Start (5 minutes)
 
 ### Prerequisites
-- Python 3.11 or higher
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
-- PostgreSQL database
-- Redis (optional, for caching)
+- **Python 3.11+** (required)
+- **Git** (to clone the repository)
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/nchen01/brain-mvp.git
    cd brain-mvp
    ```
 
-2. **Install dependencies**
+2. **Set up environment**
    ```bash
-   uv sync
+   # Create virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   
+   # Quick setup
+   python scripts/quick_setup.py
    ```
 
-3. **Set up environment variables**
+3. **Start the application**
    ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
+   python src/main.py
    ```
 
-4. **Start the application**
-   ```bash
-   uv run src/main.py
-   ```
+4. **Test it works**
+   - API: http://localhost:8000/docs
+   - Health: http://localhost:8000/api/v1/monitoring/health/simple
 
-The API will be available at `http://localhost:8000`
+That's it! 🎉
+
+## 📖 Detailed Setup
+
+For full functionality including document processing and RAG capabilities, see [INSTALLATION.md](INSTALLATION.md).
 
 ## Development
 
