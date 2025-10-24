@@ -5,8 +5,12 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from ...dbm.operations import get_db_operations
-from ...core.exceptions import DocumentVersionError, DocumentNotFoundError
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from dbm.operations import get_db_operations
+from core.exceptions import DocumentVersionError, DocumentNotFoundError
 from .models import (
     SoftDeleteRequest,
     SoftDeleteResponse,

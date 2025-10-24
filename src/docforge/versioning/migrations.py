@@ -3,7 +3,11 @@
 import logging
 from typing import List, Dict, Any
 from datetime import datetime
-from ...dbm.operations import get_db_operations
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from dbm.operations import get_db_operations
 
 logger = logging.getLogger(__name__)
 
