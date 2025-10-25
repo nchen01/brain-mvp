@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 from datetime import datetime, timezone
 
-from ..preprocessing.schemas import StandardizedDocumentOutput, ContentType
+from docforge.preprocessing.schemas import StandardizedDocumentOutput, ContentType
 from .schemas import (
     ProcessingMethod,
     PostProcessingConfig,

@@ -28,8 +28,8 @@ except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Our imports
-from ..storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
-from ..storage.meta_document_crud import MetaDocumentCRUD
+from docforge.storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
+from docforge.storage.meta_document_crud import MetaDocumentCRUD
 from .lightrag_integration import LightRAGConfig, LightRAGIntegration
 from .embeddings import EmbeddingManager
 

@@ -432,6 +432,47 @@ class Settings(BaseSettings):
         except Exception as e:
             logger.error(f"Failed to reload hot-reloadable settings: {e}")
             return False
+    
+    # Backward compatibility properties
+    @property
+    def log_file_path(self) -> str:
+        """Get log file path for backward compatibility."""
+        return str(Path(self.storage.logs_dir) / "brain_mvp.log")
+    
+    @property
+    def log_level(self) -> str:
+        """Get log level for backward compatibility."""
+        return self.monitoring.log_level.value
+    
+    @property
+    def upload_dir(self) -> str:
+        """Get upload directory for backward compatibility."""
+        return self.storage.uploads_dir
+    
+    @property
+    def processed_dir(self) -> str:
+        """Get processed directory for backward compatibility."""
+        return self.storage.processed_dir
+    
+    @property
+    def lightrag_index_path(self) -> str:
+        """Get LightRAG index path for backward compatibility."""
+        return self.lightrag.working_dir
+    
+    @property
+    def api_host(self) -> str:
+        """Get API host for backward compatibility."""
+        return os.getenv("API_HOST", "0.0.0.0")
+    
+    @property
+    def api_port(self) -> int:
+        """Get API port for backward compatibility."""
+        return int(os.getenv("API_PORT", "8000"))
+    
+    @property
+    def reload(self) -> bool:
+        """Get reload setting for backward compatibility."""
+        return self.debug and self.environment == Environment.DEVELOPMENT
 
 
 # Global settings instance
@@ -473,3 +514,7 @@ def create_environment_config_file(environment: Environment, output_path: str):
     temp_settings.save_config(output_path, include_sensitive=False)
     
     logger.info(f"Created {environment.value} configuration template at {output_path}")
+
+
+# Create global settings instance for direct import
+settings = get_settings()

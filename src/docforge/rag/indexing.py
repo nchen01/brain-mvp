@@ -27,8 +27,8 @@ except ImportError:
 
 # Our imports
 from .embeddings import EmbeddingManager
-from ..storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
-from ..storage.meta_document_crud import MetaDocumentCRUD
+from docforge.storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
+from docforge.storage.meta_document_crud import MetaDocumentCRUD
 
 logger = logging.getLogger(__name__)
 

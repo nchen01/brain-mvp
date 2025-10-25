@@ -5,7 +5,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 
-from ..preprocessing.schemas import StandardizedDocumentOutput, ContentElement, ContentType
+from docforge.preprocessing.schemas import StandardizedDocumentOutput, ContentElement, ContentType
 from .schemas import (
     ChunkData,
     ChunkMetadata,
@@ -408,7 +408,7 @@ class SectionChunker(BaseChunker):
         paragraph_chunker = ParagraphChunker(self.config)
         
         # Create a temporary document for the section
-        from ..preprocessing.schemas import ProcessingMetadata, DocumentStructure, ProcessingStatus, create_processing_metadata, create_document_structure
+        from docforge.preprocessing.schemas import ProcessingMetadata, DocumentStructure, ProcessingStatus, create_processing_metadata, create_document_structure
         
         processing_metadata = create_processing_metadata(
             processor_name="SectionChunker",

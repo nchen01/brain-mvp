@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Set, Tuple, Any
 from pathlib import Path
 from dataclasses import dataclass
 
-from ..preprocessing.schemas import StandardizedDocumentOutput
+from docforge.preprocessing.schemas import StandardizedDocumentOutput
 from .schemas import AbbreviationMapping
 
 logger = logging.getLogger(__name__)

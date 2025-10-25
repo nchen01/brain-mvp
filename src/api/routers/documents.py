@@ -18,7 +18,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from docforge.versioning.versions import VersionManager
-from docforge.versioning.models import DocumentRegistration, DocumentVersion
+from docforge.versioning.models import DocumentRegistrationRequest, DocumentRegistrationResponse, DocumentVersionModel
 from docforge.preprocessing.processor_factory import ProcessorFactory
 from docforge.postprocessing.router import PostProcessingRouter
 from docforge.storage.post_document_db import PostDocumentDatabase

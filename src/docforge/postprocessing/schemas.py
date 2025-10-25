@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 
-from ..preprocessing.schemas import StandardizedDocumentOutput
+from docforge.preprocessing.schemas import StandardizedDocumentOutput
 
 
 class ProcessingMethod(str, Enum):

@@ -106,3 +106,7 @@ def create_app() -> FastAPI:
         }
     
     return app
+
+
+# Create app instance for direct import (needed for Docker/uvicorn)
+app = create_app()

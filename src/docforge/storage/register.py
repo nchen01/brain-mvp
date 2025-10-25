@@ -16,7 +16,7 @@ from .schemas import (
     StorageStats,
     ProcessingStatus
 )
-from ..postprocessing.schemas import ChunkData
+from docforge.postprocessing.schemas import ChunkData
 
 logger = logging.getLogger(__name__)
 

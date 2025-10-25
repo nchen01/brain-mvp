@@ -1,0 +1,38 @@
+# Docker-specific requirements for Brain MVP
+# Includes all dependencies needed for containerized deployment
+
+# Include base requirements
+-r requirements.txt
+
+# Production Database
+psycopg2-binary>=2.9.0
+
+# Redis for caching and sessions
+redis>=5.0.0
+hiredis>=2.2.0
+
+# Additional production dependencies
+gunicorn>=21.2.0
+prometheus-client>=0.19.0
+
+# Health monitoring
+httpx>=0.25.0
+
+# File processing enhancements
+python-magic>=0.4.27
+Pillow>=10.0.0
+
+# Async support
+asyncpg>=0.29.0
+aioredis>=2.0.0
+
+# Logging and monitoring
+structlog>=23.2.0
+sentry-sdk[fastapi]>=1.38.0
+
+# Security
+cryptography>=41.0.0
+bcrypt>=4.1.0
+
+# Development tools (for development image)
+watchdog>=3.0.0

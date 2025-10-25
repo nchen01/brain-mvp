@@ -27,9 +27,9 @@ except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 # Our imports
-from ..storage.meta_document_db import MetaDocumentDatabase, MetaDocumentRecord, MetaDocumentComponent
-from ..storage.meta_document_crud import MetaDocumentCRUD
-from ...utils.error_handling import (
+from docforge.storage.meta_document_db import MetaDocumentDatabase, MetaDocumentRecord, MetaDocumentComponent
+from docforge.storage.meta_document_crud import MetaDocumentCRUD
+from utils.error_handling import (
     handle_async_errors, ErrorCategory, ErrorSeverity, 
     error_handler, graceful_degradation
 )
@@ -567,7 +567,7 @@ class LightRAGIntegration:
         """Simple wrapper for adding documents (for validation/testing)."""
         try:
             # Create a simple meta document record for testing
-            from ..storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
+            from docforge.storage.meta_document_db import MetaDocumentRecord, MetaDocumentComponent
             from datetime import datetime, timezone
             
             # Create a mock meta document

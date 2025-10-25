@@ -5,7 +5,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from ..dbm.operations import get_db_operations
+from dbm.operations import get_db_operations
 
 logger = logging.getLogger(__name__)
 

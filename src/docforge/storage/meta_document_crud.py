@@ -9,7 +9,7 @@ from .meta_document_db import (
     MetaDocumentRecord,
     MetaDocumentComponent
 )
-from ...utils.error_handling import (
+from utils.error_handling import (
     handle_errors, ErrorCategory, ErrorSeverity,
     graceful_degradation, RecoverableError
 )

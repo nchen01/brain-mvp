@@ -3,10 +3,10 @@
 import hashlib
 import secrets
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
-from ..dbm.operations import get_db_operations
+from dbm.operations import get_db_operations
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +217,24 @@ class DummyAuth:
         except Exception as e:
             logger.error(f"Change password error: {e}")
             return False
+    
+    def list_users(self) -> List[Dict[str, Any]]:
+        """List all users (for testing/admin purposes)."""
+        try:
+            users = self.db.select("users", "1=1", ())
+            
+            # Remove password hashes from returned data
+            user_list = []
+            for user in users:
+                user_data = dict(user)
+                del user_data["password_hash"]  # Don't return password hash
+                user_list.append(user_data)
+            
+            return user_list
+            
+        except Exception as e:
+            logger.error(f"List users error: {e}")
+            return []
 
 
 # Global auth instance

@@ -1,0 +1,136 @@
+services:
+  # Main Brain MVP Application
+  brain-mvp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: brain-mvp-app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://brain_user:brain_password@postgres:5432/brain_mvp
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+      - PYTHONPATH=/app/src
+    volumes:
+      - .:/app
+      - brain_data:/app/data
+      - brain_logs:/app/logs
+      - brain_uploads:/app/uploads
+      - brain_processed:/app/processed
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - brain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: brain-mvp-postgres
+    environment:
+      - POSTGRES_DB=brain_mvp
+      - POSTGRES_USER=brain_user
+      - POSTGRES_PASSWORD=brain_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - brain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain_user -d brain_mvp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: brain-mvp-redis
+    command: redis-server --appendonly yes --requirepass redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - brain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Monitoring Dashboard (Optional)
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile.monitoring
+    container_name: brain-mvp-monitoring
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://brain_user:brain_password@postgres:5432/brain_mvp
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - brain-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: brain-mvp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - brain-mvp
+    networks:
+      - brain-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  brain_data:
+    driver: local
+  brain_logs:
+    driver: local
+  brain_uploads:
+    driver: local
+  brain_processed:
+    driver: local
+
+networks:
+  brain-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

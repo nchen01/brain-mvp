@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from accountmatrix.auth import AuthenticationManager
-from accountmatrix.session import SessionManager
+from accountmatrix.auth import DummyAuth, get_auth
+from accountmatrix.session import DummySessionManager
 from config.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -67,14 +67,14 @@ class TokenValidationResponse(BaseModel):
 
 
 # Dependency injection
-async def get_auth_manager() -> AuthenticationManager:
+async def get_auth_manager() -> DummyAuth:
     """Get authentication manager instance."""
-    return AuthenticationManager()
+    return get_auth()
 
 
-async def get_session_manager() -> SessionManager:
+async def get_session_manager() -> DummySessionManager:
     """Get session manager instance.""" 
-    return SessionManager()
+    return DummySessionManager()
 
 
 def create_access_token(user_data: dict) -> str:
@@ -109,7 +109,7 @@ def verify_token(token: str) -> dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    auth_manager: AuthenticationManager = Depends(get_auth_manager)
+    auth_manager: DummyAuth = Depends(get_auth_manager)
 ) -> UserInfo:
     """Get current authenticated user."""
     try:
@@ -156,7 +156,7 @@ async def get_current_user(
 # Optional dependency for endpoints that can work with or without auth
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    auth_manager: AuthenticationManager = Depends(get_auth_manager)
+    auth_manager: DummyAuth = Depends(get_auth_manager)
 ) -> Optional[UserInfo]:
     """Get current user if authenticated, None otherwise."""
     if not credentials:
@@ -171,8 +171,8 @@ async def get_current_user_optional(
 @router.post("/login", response_model=LoginResponse)
 async def login(
     login_request: LoginRequest,
-    auth_manager: AuthenticationManager = Depends(get_auth_manager),
-    session_manager: SessionManager = Depends(get_session_manager)
+    auth_manager: DummyAuth = Depends(get_auth_manager),
+    session_manager: DummySessionManager = Depends(get_session_manager)
 ):
     """
     Authenticate user and return access token.
@@ -235,7 +235,7 @@ async def login(
 @router.post("/logout")
 async def logout(
     current_user: UserInfo = Depends(get_current_user),
-    session_manager: SessionManager = Depends(get_session_manager)
+    session_manager: DummySessionManager = Depends(get_session_manager)
 ):
     """
     Logout current user and invalidate session.
@@ -271,7 +271,7 @@ async def get_current_user_info(
 @router.post("/validate", response_model=TokenValidationResponse)
 async def validate_token(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    auth_manager: AuthenticationManager = Depends(get_auth_manager)
+    auth_manager: DummyAuth = Depends(get_auth_manager)
 ):
     """
     Validate JWT token and return user information.
@@ -342,7 +342,7 @@ async def get_user_permissions(
 # Test endpoints for development
 @router.get("/test/users")
 async def list_test_users(
-    auth_manager: AuthenticationManager = Depends(get_auth_manager)
+    auth_manager: DummyAuth = Depends(get_auth_manager)
 ):
     """
     List available test users (development only).
@@ -353,10 +353,10 @@ async def list_test_users(
             "message": "Available test users",
             "users": [
                 {
-                    "username": user.username,
-                    "email": user.email,
-                    "roles": user.roles,
-                    "permissions": user.permissions
+                    "username": user["username"],
+                    "email": user["email"],
+                    "roles": user["roles"],
+                    "permissions": user["permissions"]
                 }
                 for user in users
             ],
