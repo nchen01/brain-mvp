@@ -19,6 +19,22 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
     libreoffice \
+    # Additional dependencies for advanced document processing
+    libgl1-mesa-dev \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    # Java for tabula-py (table extraction)
+    default-jre \
+    # Additional OCR languages
+    tesseract-ocr-fra \
+    tesseract-ocr-deu \
+    tesseract-ocr-spa \
+    # Image processing dependencies
+    libopencv-dev \
+    # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user

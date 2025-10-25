@@ -1,0 +1,9 @@
+Brain MVP Word Document Test
+
+This simulates a Microsoft Word document with:
+- Bold text formatting
+- Bullet points
+- Numbered lists
+- Tables and data
+
+The system should process this content and maintain structure.

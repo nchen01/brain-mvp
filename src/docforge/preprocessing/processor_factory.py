@@ -22,23 +22,28 @@ class ProcessorFactory:
         self._initialize_processors()
     
     def _initialize_processors(self):
-        """Initialize and register available processors for MVP."""
+        """Initialize and register all available processors."""
         try:
-            # MVP: Only register MinerU processor for PDF processing
+            # Register all processors for full functionality
+            
+            # MinerU processor for advanced PDF processing
             mineru_processor = MinerUProcessor()
             processor_registry.register_processor("mineru", mineru_processor)
             
-            # Future processors (commented out for MVP):
-            # text_processor = TextDocumentProcessor()
-            # processor_registry.register_processor("text", text_processor)
-            # markitdown_processor = MarkItDownProcessor()
-            # processor_registry.register_processor("markitdown", markitdown_processor)
+            # Text processor for basic text files
+            text_processor = TextDocumentProcessor()
+            processor_registry.register_processor("text", text_processor)
             
-            logger.info("MVP processors initialized successfully (MinerU for PDFs)")
+            # MarkItDown processor for Office documents
+            markitdown_processor = MarkItDownProcessor()
+            processor_registry.register_processor("markitdown", markitdown_processor)
+            
+            logger.info("All processors initialized successfully (MinerU, MarkItDown, Text)")
             
         except Exception as e:
             logger.error(f"Error initializing processors: {e}")
-            raise
+            # Don't raise - allow system to work with available processors
+            logger.warning("Some processors may not be available - continuing with available ones")
     
     def get_processor_for_file(
         self,
