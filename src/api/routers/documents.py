@@ -131,7 +131,7 @@ async def upload_document(
     file: UploadFile = File(...),
     parent_version_id: Optional[str] = Query(None, description="Parent version ID for branching"),
     metadata: Optional[str] = Query(None, description="JSON metadata string"),
-    current_user: UserInfo = Depends(get_current_user),
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional),
     version_manager: VersionManager = Depends(get_version_manager),
     processor_factory: ProcessorFactory = Depends(get_processor_factory)
 ):
@@ -152,8 +152,8 @@ async def upload_document(
         
         # Parse metadata if provided
         doc_metadata = {
-            'uploaded_by': current_user.user_id,
-            'uploaded_by_username': current_user.username,
+            'uploaded_by': current_user.user_id if current_user else 'anonymous',
+            'uploaded_by_username': current_user.username if current_user else 'anonymous',
             'upload_timestamp': datetime.now().isoformat()
         }
         if metadata:
@@ -170,7 +170,7 @@ async def upload_document(
             logger.info(f"Creating new version with parent: {parent_version_id}")
             
             # Validate parent version exists
-            parent_version = version_manager.get_version(parent_version_id)
+            parent_version = await version_manager.get_version(parent_version_id)
             if not parent_version:
                 raise HTTPException(status_code=404, detail="Parent version not found")
             
@@ -208,14 +208,14 @@ async def upload_document(
             )
         
         # Get version info
-        version_info = version_manager.get_version(version_result)
+        version_info = version_manager.get_version_sync(version_result)
         if not version_info:
             raise HTTPException(status_code=500, detail="Failed to retrieve created version")
         
         # Create processing task
         task_id = str(uuid.uuid4())
         processing_tasks[task_id] = {
-            'document_id': version_info.document_id,
+            'document_id': version_info['document_id'],
             'version_id': version_result,
             'status': 'pending',
             'stage': 'queued',
@@ -235,8 +235,8 @@ async def upload_document(
         )
         
         return DocumentUploadResponse(
-            document_id=version_info.document_id,
-            lineage_id=version_info.document_id,  # For now, using document_id as lineage_id
+            document_id=version_info['document_id'],
+            lineage_id=version_info['document_id'],  # For now, using document_id as lineage_id
             version_number=1,  # Will be properly calculated in production
             filename=file.filename,
             file_size=file_size,
@@ -264,7 +264,7 @@ async def get_document_versions(
     """
     try:
         # Get all versions for this document
-        versions = version_manager.get_versions(document_id)
+        versions = await version_manager.get_versions(document_id)
         
         if not versions:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -325,7 +325,7 @@ async def create_document_branch(
     """
     try:
         # Validate source version exists
-        source_version = version_manager.get_version(version_id)
+        source_version = await version_manager.get_version(version_id)
         if not source_version or source_version.document_id != document_id:
             raise HTTPException(status_code=404, detail="Source version not found")
         
@@ -1224,7 +1224,7 @@ async def download_processed_document(
     try:
         # Validate document exists
         if version_id:
-            version = version_manager.get_version(version_id)
+            version = await version_manager.get_version(version_id)
             if not version or version.document_id != document_id:
                 raise HTTPException(status_code=404, detail="Version not found")
         else:
@@ -1243,13 +1243,13 @@ async def download_processed_document(
             raise HTTPException(status_code=404, detail="No completed processing found for document")
         
         # Generate content based on stage and format
-        filename = version.metadata.get('filename', 'document')
+        filename = version.get('metadata', {}).get('filename', 'document')
         base_name = Path(filename).stem
         
         if stage == "raw" and format == "original":
             # Return original content
-            content = version.content.encode('utf-8')
-            media_type = version.metadata.get('content_type', 'application/octet-stream')
+            content = version.get('content', '').encode('utf-8')
+            media_type = version.get('metadata', {}).get('content_type', 'application/octet-stream')
             download_filename = filename
             
         elif stage == "preprocessed":
@@ -1260,8 +1260,8 @@ async def download_processed_document(
                     "version_id": version_id or "latest",
                     "processing_stage": "preprocessed",
                     "content": {
-                        "text": version.content,
-                        "metadata": version.metadata,
+                        "text": version.get('content', ''),
+                        "metadata": version.get('metadata', {}),
                         "structure": {
                             "paragraphs": 5,
                             "headings": 2,
@@ -1281,7 +1281,7 @@ async def download_processed_document(
                 
             elif format == "markdown":
                 # Mock markdown conversion
-                markdown_content = f"# {base_name}\n\n{version.content}\n\n---\n*Processed by DocForge Brain MVP*"
+                markdown_content = f"# {base_name}\n\n{version.get('content', '')}\n\n---\n*Processed by DocForge Brain MVP*"
                 content = markdown_content.encode('utf-8')
                 media_type = "text/markdown"
                 download_filename = f"{base_name}_preprocessed.md"
@@ -1292,10 +1292,11 @@ async def download_processed_document(
         elif stage == "postprocessed":
             if format == "chunks":
                 # Mock chunked content
+                version_content = version.get('content', '')
                 chunks = [
-                    {"id": 1, "content": version.content[:100], "type": "paragraph"},
-                    {"id": 2, "content": version.content[100:200], "type": "paragraph"},
-                    {"id": 3, "content": version.content[200:], "type": "paragraph"}
+                    {"id": 1, "content": version_content[:100], "type": "paragraph"},
+                    {"id": 2, "content": version_content[100:200], "type": "paragraph"},
+                    {"id": 3, "content": version_content[200:], "type": "paragraph"}
                 ]
                 content_data = {
                     "document_id": document_id,

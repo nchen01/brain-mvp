@@ -235,6 +235,19 @@ class DummyAuth:
         except Exception as e:
             logger.error(f"List users error: {e}")
             return []
+    
+    def update_last_login(self, user_id: str) -> bool:
+        """Update user's last login timestamp."""
+        try:
+            return self.db.update(
+                "users",
+                {"last_login": datetime.utcnow().isoformat()},
+                "user_id = ?",
+                (user_id,)
+            )
+        except Exception as e:
+            logger.error(f"Update last login error: {e}")
+            return False
 
 
 # Global auth instance

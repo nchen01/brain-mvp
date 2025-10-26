@@ -79,11 +79,11 @@ class ProcessorFactory:
             
             processor_type = routing_decision["processor_type"]
             
-            # Map processor types to registered processors (MVP: only MinerU)
+            # Map processor types to registered processors
             processor_mapping = {
                 ProcessorType.MINERU_PDF.value: "mineru",
+                ProcessorType.TEXT_PLAIN.value: "text",
                 # Future processors:
-                # ProcessorType.TEXT_PLAIN.value: "text",
                 # ProcessorType.MARKITDOWN_OFFICE.value: "markitdown",
                 # ProcessorType.MARKITDOWN_EXCEL.value: "markitdown",
                 # ProcessorType.MARKITDOWN_POWERPOINT.value: "markitdown",

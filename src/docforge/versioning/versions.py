@@ -742,6 +742,23 @@ class VersionManager:
             logger.error(f"Error creating version for document {document_id}: {e}")
             return None
     
+    def get_version_sync(self, version_id: str) -> Optional[Dict[str, Any]]:
+        """Get a version by ID (synchronous wrapper for in-memory storage)."""
+        try:
+            if not hasattr(self, '_versions'):
+                return None
+            
+            # Search through all documents for the version_id
+            for document_id, versions in self._versions.items():
+                for version in versions:
+                    if version.get('doc_uuid') == version_id:
+                        return version
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting version {version_id}: {e}")
+            return None
+
     def get_versions(self, document_id: str) -> List[Dict[str, Any]]:
         """Get all versions of a document (synchronous wrapper)."""
         try:

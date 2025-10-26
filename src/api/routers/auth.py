@@ -194,30 +194,34 @@ async def login(
             )
         
         # Create session
-        session_id = session_manager.create_session(user.user_id)
+        session_id = session_manager.create_session(user["user_id"])
         
         # Create JWT token
         token_data = {
-            "user_id": user.user_id,
-            "username": user.username,
+            "user_id": user["user_id"],
+            "username": user["username"],
             "session_id": session_id
         }
         
         access_token = create_access_token(token_data)
         
-        # Update last login
-        auth_manager.update_last_login(user.user_id)
+        # Update last login (skip if database is readonly)
+        try:
+            auth_manager.update_last_login(user["user_id"])
+        except Exception as e:
+            logger.warning(f"Could not update last login: {e}")
         
         return LoginResponse(
             access_token=access_token,
             token_type="bearer",
             expires_in=JWT_EXPIRATION_HOURS * 3600,
             user_info={
-                "user_id": user.user_id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name,
-                "roles": user.roles,
+                "user_id": user["user_id"],
+                "username": user["username"],
+                "email": user.get("email", ""),
+                "full_name": user.get("full_name", user["username"]),
+                "roles": user.get("roles", []),
+                "permissions": user.get("permissions", []),
                 "permissions": user.permissions
             }
         )
