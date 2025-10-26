@@ -48,11 +48,10 @@ FROM base AS dependencies
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-COPY requirements-docker.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements-docker.txt
+    pip install -r requirements.txt
 
 # Stage 3: Development image
 FROM dependencies AS development

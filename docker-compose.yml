@@ -47,6 +47,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
     ports:
       - "5432:5432"
     networks:
@@ -76,43 +77,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # Monitoring Dashboard (Optional)
-  monitoring:
-    build:
-      context: .
-      dockerfile: Dockerfile.monitoring
-    container_name: brain-mvp-monitoring
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://brain_user:brain_password@postgres:5432/brain_mvp
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - brain-network
-    restart: unless-stopped
-    profiles:
-      - monitoring
 
-  # Nginx Reverse Proxy (Optional)
-  nginx:
-    image: nginx:alpine
-    container_name: brain-mvp-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - brain-mvp
-    networks:
-      - brain-network
-    restart: unless-stopped
-    profiles:
-      - production
 
 volumes:
   postgres_data:

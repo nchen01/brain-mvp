@@ -11,7 +11,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from core.exceptions import BrainMVPException
 from config.settings import settings
-from api.routers import documents, auth, monitoring
+from api.routers import documents, auth
 
 
 def create_app() -> FastAPI:
@@ -38,7 +38,6 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(auth.router)
     app.include_router(documents.router)
-    app.include_router(monitoring.router)
     
     # Exception handlers
     @app.exception_handler(BrainMVPException)
@@ -58,31 +57,13 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """Simple health check endpoint."""
-        from utils.monitoring_dashboard import get_dashboard
-        
-        try:
-            dashboard = get_dashboard()
-            status = dashboard.get_current_status()
-            
-            return {
-                "status": status.get('overall_status', 'healthy'),
-                "version": "1.0.0",
-                "system": "DocForge Brain MVP",
-                "timestamp": datetime.now().isoformat(),
-                "components": {
-                    name: health.get('status', 'unknown')
-                    for name, health in status.get('component_health', {}).items()
-                },
-                "details_endpoint": "/api/v1/monitoring/health"
-            }
-        except Exception:
-            return {
-                "status": "degraded",
-                "version": "1.0.0", 
-                "system": "DocForge Brain MVP",
-                "timestamp": datetime.now().isoformat(),
-                "error": "Monitoring system unavailable"
-            }
+        return {
+            "status": "healthy",
+            "version": "1.0.0",
+            "system": "DocForge Brain MVP",
+            "timestamp": datetime.now().isoformat(),
+            "message": "Brain MVP is running"
+        }
     
     # Root endpoint
     @app.get("/")

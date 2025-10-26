@@ -50,6 +50,70 @@ graph TB
 - **QueryReactor** provides intelligent question-answering using processed documents
 - **DBM** handles all database operations and maintenance across the system
 
+## Document Versioning and Traceability System
+
+### Versioning Architecture
+
+The Brain MVP implements a comprehensive document versioning system that ensures complete traceability while supporting privacy-focused operations:
+
+```mermaid
+graph TD
+    A[Document Upload] --> B{New Document?}
+    B -->|Yes| C[Create New Lineage]
+    B -->|No| D[Add to Existing Lineage]
+    C --> E[Generate lineage_uuid]
+    D --> F[Increment version_number]
+    E --> G[Create DocumentVersion v1]
+    F --> H[Create DocumentVersion vN]
+    G --> I[Process Document]
+    H --> I
+    I --> J[Maintain Version Chain]
+    
+    K[Edit Old Version] --> L[Create Branch from Old Version]
+    L --> M[New DocumentVersion with parent_version]
+    M --> I
+    
+    N[Privacy Delete] --> O[Soft Delete Version]
+    O --> P[Preserve Lineage Chain]
+    P --> Q[Mark is_deleted = True]
+```
+
+### Key Features
+
+1. **Lineage Tracking**: Every document belongs to a lineage chain with complete version history
+2. **Version Branching**: Edit old versions to create new branches in the version tree
+3. **Soft Deletion**: Privacy-focused deletion that preserves traceability
+4. **Content Integrity**: File hashes ensure version integrity and detect changes
+5. **Metadata Preservation**: Full metadata history across all versions
+
+### Version Chain Examples
+
+**Linear Versioning**:
+```
+Lineage: doc-lineage-123
+├── v1 (original upload) → doc-uuid-001
+├── v2 (updated content) → doc-uuid-002
+└── v3 (current) → doc-uuid-003
+```
+
+**Branched Versioning** (editing old versions):
+```
+Lineage: doc-lineage-123
+├── v1 (original) → doc-uuid-001
+├── v2 → doc-uuid-002
+├── v3 → doc-uuid-003
+└── v4 (edited from v1) → doc-uuid-004
+    └── parent_version: 1
+```
+
+**Privacy Deletion**:
+```
+Lineage: doc-lineage-123
+├── v1 (DELETED - privacy) → doc-uuid-001 [is_deleted=True]
+├── v2 → doc-uuid-002
+└── v3 (current) → doc-uuid-003
+```
+
 ## Components and Interfaces
 
 ### 1. DocForge - Document Processing and Database
@@ -115,17 +179,24 @@ graph LR
 
 **Database Structure:**
 
-1. **Raw Document Database**
-   - Stores original document files (one file per document)
+1. **Document Lineage Table (SQL) - NEW**
+   - Tracks document version chains and relationships
+   - Maintains complete traceability across all versions
+   - Supports privacy-focused deletion while preserving lineage
+   - Primary key: lineage_uuid
+
+2. **Raw Document Database**
+   - Stores original document files (one file per document version)
    - Binary storage for complete document preservation
-   - Indexed by docUUID for fast retrieval
+   - Indexed by docUUID and lineage_uuid for fast retrieval
 
-2. **Raw Document Register Table (SQL)**
+3. **Raw Document Register Table (SQL)**
    - Stores document metadata: UUID, file path, file type, timestamp, user info, labels
+   - Enhanced with version tracking and lineage relationships
    - Primary key: docUUID
-   - Supports querying and filtering by metadata attributes
+   - Foreign key: lineage_uuid
 
-3. **Raw Document Database (Temp)**
+4. **Raw Document Database (Temp)**
    - Temporary storage for duplicate detection before final upload
    - Supports auto-clean functionality or manual review workflows
    - Prevents duplicate document ingestion
@@ -168,7 +239,18 @@ graph LR
 **Interfaces:**
 ```python
 class DocForgeInterface:
-    def register_document(self, document: RawDocument) -> DocumentRegistration
+    # Document Registration and Versioning
+    def register_document(self, document: RawDocument, parent_lineage: Optional[str] = None, 
+                         edit_source_version: Optional[int] = None) -> DocumentRegistration
+    def create_document_lineage(self, filename: str, user_id: str) -> str
+    def get_document_lineage(self, lineage_uuid: str) -> DocumentLineage
+    def get_version_history(self, lineage_uuid: str, include_deleted: bool = False) -> List[DocumentVersion]
+    def get_current_version(self, lineage_uuid: str) -> DocumentVersion
+    def soft_delete_version(self, doc_uuid: str, reason: str) -> bool
+    def soft_delete_lineage(self, lineage_uuid: str, reason: str) -> bool
+    def restore_version(self, doc_uuid: str) -> bool
+    
+    # Processing Pipeline
     def route_document(self, doc_id: str) -> ProcessorType
     def process_document(self, doc_id: str, processor: ProcessorType) -> ProcessingResult
     def route_post_processing(self, processed_doc: ProcessedDocument) -> List[PostProcessorType]
@@ -176,7 +258,11 @@ class DocForgeInterface:
     def expand_abbreviations(self, content: str, domain: str) -> str
     def post_process(self, processed_doc: ProcessedDocument) -> MetaDocument
     def prepare_for_rag(self, meta_doc: MetaDocument) -> RAGDocument
+    
+    # Retrieval and Search
     def retrieve_documents(self, query: Query) -> List[Document]
+    def retrieve_document_by_version(self, doc_uuid: str) -> Document
+    def retrieve_lineage_documents(self, lineage_uuid: str) -> List[Document]
 
 class PostProcessorType(Enum):
     CHUNKING_STRATEGY = "chunking_strategy"
@@ -191,16 +277,48 @@ class ChunkingStrategy(Enum):
     TOPIC = "topic"
     SEMANTIC = "semantic"
 
-class DocumentRegistration(BaseModel):
+class DocumentLineage(BaseModel):
+    """Tracks document version chains and relationships"""
+    lineage_uuid: str
+    original_filename: str
+    created_by: str
+    created_at: datetime
+    current_version: int
+    total_versions: int
+    is_active: bool  # False if entire lineage is deleted for privacy
+
+class DocumentVersion(BaseModel):
+    """Individual document version within a lineage"""
     doc_uuid: str
+    lineage_uuid: str
+    version_number: int
+    parent_version: Optional[int]  # For branching/editing old versions
     filename: str
     file_path: str
     file_type: str
+    file_hash: str  # Content hash for integrity
     timestamp: datetime
     user_id: str
     labels: List[str]
-    is_new: bool
+    is_current: bool  # Latest version in this branch
+    is_deleted: bool  # Soft delete for privacy
+    deletion_reason: Optional[str]  # Privacy, user request, etc.
+    edit_source_version: Optional[int]  # If this version was created by editing an old version
+
+class DocumentRegistration(BaseModel):
+    doc_uuid: str
+    lineage_uuid: str
+    version_number: int
+    filename: str
+    file_path: str
+    file_type: str
+    file_hash: str
+    timestamp: datetime
+    user_id: str
+    labels: List[str]
+    is_new_lineage: bool  # True if this is the first version of a new document
     is_duplicate: bool
+    parent_version: Optional[int]
 
 class MetaDocument(BaseModel):
     doc_uuid: str
@@ -465,7 +583,7 @@ class ErrorResponse(BaseModel):
 - Structured AI interactions with type safety
 - Complex reasoning chains and decision trees
 
-### LightRAG
+### 
 - Document embedding and retrieval in DocForge
 - Semantic search capabilities
 - Context-aware document chunking
