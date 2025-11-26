@@ -53,7 +53,7 @@ The Brain MVP should be able to process this document and make it searchable thr
     try:
         # Test document upload
         success, stdout, stderr = run_command(
-            f'curl -X POST -F "file=@{test_file}" http://localhost:8000/api/v1/documents/upload',
+            f'curl -X POST -F "file=@{test_file}" http://localhost:8080/api/v1/documents/upload',
             timeout=30
         )
         
@@ -95,7 +95,7 @@ def test_api_endpoints():
     
     for endpoint, name in endpoints:
         success, stdout, stderr = run_command(
-            f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:8000{endpoint}",
+            f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:8080{endpoint}",
             timeout=10
         )
         

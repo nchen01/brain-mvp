@@ -78,9 +78,9 @@ print('✅ Logging system working')
 python src/main.py
 ```
 
-The application should start on `http://localhost:8000`
+The application should start on `http://localhost:8080`
 
-Visit `http://localhost:8000/docs` to see the API documentation.
+Visit `http://localhost:8080/docs` to see the API documentation.
 
 ## What Works Out of the Box
 
@@ -203,7 +203,7 @@ dashboard.stop_monitoring()
 "
 
 # Test API endpoints
-curl http://localhost:8000/api/v1/monitoring/health/simple
+curl http://localhost:8080/api/v1/monitoring/health/simple
 ```
 
 Expected output:
@@ -234,7 +234,7 @@ python -m pytest tests/unit/test_logging_monitoring_comprehensive.py -v
 1. **Check the logs**: `tail -f logs/docforge_main.log`
 2. **Run diagnostics**: `python scripts/setup_dev_env.py`
 3. **Test basic functionality**: `python test_your_pdf.py` (with any PDF file)
-4. **Check system status**: Visit `http://localhost:8000/api/v1/monitoring/health`
+4. **Check system status**: Visit `http://localhost:8080/api/v1/monitoring/health`
 
 ## What's Next
 

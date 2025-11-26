@@ -8,7 +8,7 @@
 docker-compose up -d
 
 # Open your web browser and go to:
-http://localhost:8000
+http://localhost:8080
 ```
 
 ### 2. Using the Web Interface
@@ -43,7 +43,7 @@ cd brain_mvp
 docker-compose up -d
 
 # Verify system is running
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 # Expected: {"status":"healthy","version":"1.0.0"...}
 ```
 
@@ -51,7 +51,7 @@ curl http://localhost:8000/health
 ```bash
 # Upload a PDF file
 curl -X POST -F "file=@your_document.pdf" \
-  http://localhost:8000/api/v1/documents/upload
+  http://localhost:8080/api/v1/documents/upload
 
 # Save the document_id from the response
 ```
@@ -59,16 +59,16 @@ curl -X POST -F "file=@your_document.pdf" \
 ### 3. Check Processing Status
 ```bash
 # Replace {document_id} with your actual document ID
-curl http://localhost:8000/api/v1/documents/{document_id}/status
+curl http://localhost:8080/api/v1/documents/{document_id}/status
 ```
 
 ### 4. Get Extracted Content
 ```bash
 # Get simple text format
-curl "http://localhost:8000/api/v1/documents/{document_id}/content?format=text"
+curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=text"
 
 # Get detailed JSON with metadata
-curl "http://localhost:8000/api/v1/documents/{document_id}/content?format=json"
+curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=json"
 ```
 
 ## 📋 Complete API Reference
@@ -80,7 +80,7 @@ curl "http://localhost:8000/api/v1/documents/{document_id}/content?format=json"
 ```bash
 curl -X POST \
   -F "file=@document.pdf" \
-  http://localhost:8000/api/v1/documents/upload
+  http://localhost:8080/api/v1/documents/upload
 ```
 
 **Response**:
@@ -186,7 +186,7 @@ for pdf_file in *.pdf; do
     
     # Upload document
     response=$(curl -s -X POST -F "file=@$pdf_file" \
-        http://localhost:8000/api/v1/documents/upload)
+        http://localhost:8080/api/v1/documents/upload)
     
     # Extract document ID
     doc_id=$(echo $response | jq -r '.document_id')
@@ -194,7 +194,7 @@ for pdf_file in *.pdf; do
     
     # Wait for processing
     while true; do
-        status=$(curl -s "http://localhost:8000/api/v1/documents/$doc_id/status" | jq -r '.status')
+        status=$(curl -s "http://localhost:8080/api/v1/documents/$doc_id/status" | jq -r '.status')
         echo "Status: $status"
         
         if [ "$status" = "completed" ]; then
@@ -209,7 +209,7 @@ for pdf_file in *.pdf; do
     done
     
     # Get extracted content
-    curl -s "http://localhost:8000/api/v1/documents/$doc_id/content?format=text" \
+    curl -s "http://localhost:8080/api/v1/documents/$doc_id/content?format=text" \
         | jq -r '.extracted_text' > "${pdf_file%.pdf}_extracted.txt"
     
     echo "Content saved to ${pdf_file%.pdf}_extracted.txt"
@@ -224,7 +224,7 @@ import time
 import json
 
 class BrainMVPClient:
-    def __init__(self, base_url="http://localhost:8000"):
+    def __init__(self, base_url="http://localhost:8080"):
         self.base_url = base_url
     
     def upload_document(self, file_path):
@@ -280,7 +280,7 @@ print(f"Extracted text: {result['extracted_content']['raw_text']}")
 ### Health Monitoring
 ```bash
 # Check system health
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # Check all Docker services
 docker-compose ps

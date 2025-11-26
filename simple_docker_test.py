@@ -198,7 +198,7 @@ def test_api_accessibility():
     
     # Test health endpoint with curl
     success, stdout, stderr = run_command(
-        "curl -f -s http://localhost:8000/health",
+        "curl -f -s http://localhost:8080/health",
         timeout=10
     )
     

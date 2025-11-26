@@ -14,7 +14,7 @@ from pathlib import Path
 
 class DockerE2ETest:
     def __init__(self):
-        self.base_url = "http://localhost:8000"
+        self.base_url = "http://localhost:8080"
         self.test_results = []
         
     def log_test(self, test_name, success, message=""):

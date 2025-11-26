@@ -37,16 +37,16 @@ docker-compose up -d
 3. Access the system:
 ```bash
 # Web Interface (Recommended)
-open http://localhost:8000
+open http://localhost:8080
 
 # API Health Check
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 # Should return: {"status": "healthy", "version": "1.0.0"}
 ```
 
 ### Using the Web Interface (Easiest Method)
 
-1. **Open your browser**: Navigate to `http://localhost:8000`
+1. **Open your browser**: Navigate to `http://localhost:8080`
 2. **Upload PDF**: Drag and drop a PDF file or click "Choose PDF File"
 3. **Process**: Click "Process Document" and watch real-time progress
 4. **Download Results**: Get extracted content in Text, JSON, or Markdown format
@@ -57,7 +57,7 @@ curl http://localhost:8000/health
 
 ```bash
 # Upload a PDF file
-curl -X POST "http://localhost:8000/api/v1/documents/upload" \
+curl -X POST "http://localhost:8080/api/v1/documents/upload" \
   -F "file=@your_document.pdf"
 
 # Response includes document_id for tracking
@@ -67,17 +67,17 @@ curl -X POST "http://localhost:8000/api/v1/documents/upload" \
 
 ```bash
 # Replace {document_id} with the ID from upload response
-curl "http://localhost:8000/api/v1/documents/{document_id}/status"
+curl "http://localhost:8080/api/v1/documents/{document_id}/status"
 ```
 
 #### Get Extracted Content
 
 ```bash
 # Get simple text format
-curl "http://localhost:8000/api/v1/documents/{document_id}/content?format=text"
+curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=text"
 
 # Get detailed JSON with metadata
-curl "http://localhost:8000/api/v1/documents/{document_id}/content?format=json"
+curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=json"
 ```
 
 ### Testing the System
@@ -91,7 +91,7 @@ docker-compose exec brain-mvp python final_e2e_test.py
 # Or test web interface functionality
 docker-compose exec brain-mvp python -c "
 import requests
-response = requests.get('http://localhost:8000/health')
+response = requests.get('http://localhost:8080/health')
 print('System Status:', response.json())
 "
 ```
@@ -137,9 +137,9 @@ print('System Status:', response.json())
 
 ### Interactive Documentation
 
-- **Web Interface**: http://localhost:8000 (Primary user interface)
-- **Swagger UI**: http://localhost:8000/docs (API documentation)
-- **System Health**: http://localhost:8000/health (Status monitoring)
+- **Web Interface**: http://localhost:8080 (Primary user interface)
+- **Swagger UI**: http://localhost:8080/docs (API documentation)
+- **System Health**: http://localhost:8080/health (Status monitoring)
 
 ### Core API Endpoints
 
@@ -284,10 +284,10 @@ The system works out-of-the-box with sensible defaults. For production:
 
 ```bash
 # System health check
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # Web interface accessibility
-curl -I http://localhost:8000
+curl -I http://localhost:8080
 
 # Database connectivity
 docker-compose exec postgres psql -U brain_user -d brain_mvp -c "SELECT 1;"
@@ -344,7 +344,7 @@ docker-compose down
 docker-compose up -d
 
 # Check system status
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 ## Documentation
@@ -354,7 +354,7 @@ curl http://localhost:8000/health
 - **PROJECT_EXPLANATION.md**: Complete technical overview and data flow
 - **USAGE_GUIDE.md**: Comprehensive user and developer guide
 - **END_TO_END_TEST_RESULTS.md**: Testing validation and results
-- **API Documentation**: http://localhost:8000/docs (when running)
+- **API Documentation**: http://localhost:8080/docs (when running)
 
 ### Key Features Demonstrated
 
@@ -398,7 +398,7 @@ The Brain MVP is a complete, working document processing system. For support:
 1. **Check Documentation**: Review PROJECT_EXPLANATION.md and USAGE_GUIDE.md
 2. **Run Tests**: Execute final_e2e_test.py to verify functionality
 3. **Check Logs**: Use docker-compose logs for debugging
-4. **Web Interface**: Use http://localhost:8000 for easy document processing
-5. **API Access**: Use http://localhost:8000/docs for programmatic integration
+4. **Web Interface**: Use http://localhost:8080 for easy document processing
+5. **API Access**: Use http://localhost:8080/docs for programmatic integration
 
 The system is production-ready and provides comprehensive PDF processing capabilities with both user-friendly web interface and developer-friendly API access.

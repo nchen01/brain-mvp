@@ -32,7 +32,7 @@ def test_docker_status():
     
     if success:
         try:
-            containers = [json.loads(line) for line in stdout.strip().split('\\n') if line.strip()]
+            containers = [json.loads(line) for line in stdout.strip().split('\n') if line.strip()]
             
             expected_services = ['brain-mvp', 'postgres', 'redis']
             running_services = []
@@ -73,7 +73,7 @@ def test_api_health():
     
     for endpoint, name in endpoints:
         success, stdout, stderr = run_command(
-            f"curl -s http://localhost:8000{endpoint}",
+            f"curl -s http://localhost:8080{endpoint}",
             timeout=10
         )
         
@@ -139,7 +139,7 @@ Test completed successfully if all steps pass.
         # Step 1: Upload document
         print("  📤 Testing document upload...")
         success, stdout, stderr = run_command(
-            f'curl -s -X POST -F "file=@{test_file}" http://localhost:8000/api/v1/documents/upload',
+            f'curl -s -X POST -F "file=@{test_file}" http://localhost:8080/api/v1/documents/upload',
             timeout=30
         )
         
@@ -167,7 +167,7 @@ Test completed successfully if all steps pass.
         time.sleep(2)  # Give it a moment to start processing
         
         success, stdout, stderr = run_command(
-            f'curl -s "http://localhost:8000/api/v1/documents/{document_id}/status"',
+            f'curl -s "http://localhost:8080/api/v1/documents/{document_id}/status"',
             timeout=10
         )
         
@@ -184,7 +184,7 @@ Test completed successfully if all steps pass.
         # Step 3: Get document versions
         print("  📋 Testing version history...")
         success, stdout, stderr = run_command(
-            f'curl -s "http://localhost:8000/api/v1/documents/{document_id}/versions"',
+            f'curl -s "http://localhost:8080/api/v1/documents/{document_id}/versions"',
             timeout=10
         )
         
@@ -201,7 +201,7 @@ Test completed successfully if all steps pass.
         # Step 4: Test download
         print("  📥 Testing document download...")
         success, stdout, stderr = run_command(
-            f'curl -s -I "http://localhost:8000/api/v1/documents/{document_id}/download"',
+            f'curl -s -I "http://localhost:8080/api/v1/documents/{document_id}/download"',
             timeout=10
         )
         
@@ -281,7 +281,7 @@ def test_performance_basics():
     
     # Test response time for health endpoint
     success, stdout, stderr = run_command(
-        'curl -w "Response time: %{time_total}s\\n" -s -o /dev/null http://localhost:8000/health',
+        'curl -w "Response time: %{time_total}s\\n" -s -o /dev/null http://localhost:8080/health',
         timeout=10
     )
     
@@ -293,7 +293,7 @@ def test_performance_basics():
     # Test concurrent requests (simple)
     print("  Testing concurrent requests...")
     success, stdout, stderr = run_command(
-        'for i in {1..5}; do curl -s http://localhost:8000/health > /dev/null & done; wait',
+        'for i in {1..5}; do curl -s http://localhost:8080/health > /dev/null & done; wait',
         timeout=15
     )
     
@@ -364,9 +364,9 @@ def main():
         print("  • Basic performance")
         print()
         print("🔗 Access Points:")
-        print("  • API Documentation: http://localhost:8000/docs")
-        print("  • Health Check: http://localhost:8000/health")
-        print("  • Document Upload: http://localhost:8000/api/v1/documents/upload")
+        print("  • API Documentation: http://localhost:8080/docs")
+        print("  • Health Check: http://localhost:8080/health")
+        print("  • Document Upload: http://localhost:8080/api/v1/documents/upload")
         
     elif success_rate >= 80:
         print()
