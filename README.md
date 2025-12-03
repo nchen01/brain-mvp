@@ -96,6 +96,24 @@ print('System Status:', response.json())
 "
 ```
 
+## Safety and Security
+
+### Strict Approval Commands
+
+To prevent accidental data loss or destructive operations, certain commands require **explicit user approval** before execution. These commands are documented in [`STRICT_APPROVAL_COMMANDS.md`](STRICT_APPROVAL_COMMANDS.md) and include:
+
+- **File/Directory Deletion**: `rm`, `rmdir`, `unlink`
+- **Disk Operations**: `dd`, `mkfs`, `fdisk` (can overwrite entire disks)
+- **Permission Changes**: `chmod`, `chown`, `chgrp`
+- **Process Termination**: `kill`, `pkill`, `killall`
+- **System Control**: `shutdown`, `reboot`, `halt`, `init`
+- **Privilege Escalation**: `sudo`
+
+> [!CAUTION]
+> These commands will **never** be auto-executed by automated processes. Manual review and approval is always required to prevent accidental system damage or data loss.
+
+For the complete list with descriptions, see [`STRICT_APPROVAL_COMMANDS.md`](STRICT_APPROVAL_COMMANDS.md).
+
 ## Architecture
 
 ### System Components
