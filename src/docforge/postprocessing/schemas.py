@@ -24,6 +24,7 @@ class ChunkingStrategy(str, Enum):
     SENTENCE = "sentence"
     SEMANTIC = "semantic"
     FIXED_SIZE = "fixed_size"
+    RECURSIVE = "recursive"  # LangChain-style recursive text splitting
     SLIDING_WINDOW = "sliding_window"
     HIERARCHICAL = "hierarchical"
     SECTION_BASED = "section_based"

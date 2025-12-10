@@ -1,8 +1,9 @@
 """FastAPI application factory."""
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 
 import sys
@@ -11,7 +12,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from core.exceptions import BrainMVPException
 from config.settings import settings
-from api.routers import documents, auth
+from api.routers import documents, auth, chunks
 
 
 def create_app() -> FastAPI:
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(auth.router)
     app.include_router(documents.router)
+    app.include_router(chunks.router, prefix="/api/v1")
     
     # Exception handlers
     @app.exception_handler(BrainMVPException)
@@ -65,9 +67,10 @@ def create_app() -> FastAPI:
             "message": "Brain MVP is running"
         }
     
-    # Root endpoint
-    @app.get("/")
-    async def root():
+    # API info endpoint
+    @app.get("/api")
+    async def api_info():
+        """API information endpoint."""
         return {
             "message": "DocForge Brain MVP - AI-powered document processing system",
             "version": "1.0.0",
@@ -85,6 +88,26 @@ def create_app() -> FastAPI:
                 "documents": "/api/v1/documents"
             }
         }
+    
+    # Serve web interface at root
+    @app.get("/")
+    async def serve_web_interface():
+        """Serve the web interface HTML."""
+        # web_interface.html is in the project root, two levels up from src/api
+        web_interface_path = Path(__file__).parent.parent.parent / "web_interface.html"
+        
+        if web_interface_path.exists():
+            return FileResponse(web_interface_path)
+        else:
+            # Fallback if file not found
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "Web interface not found",
+                    "message": "web_interface.html is missing from the project root",
+                    "api_docs": "/docs"
+                }
+            )
     
     return app
 

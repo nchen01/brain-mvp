@@ -1,5 +1,3 @@
-Database initialization SQL:
-
     -- Document lineage table
     CREATE TABLE IF NOT EXISTS document_lineage (
         lineage_uuid TEXT PRIMARY KEY,
@@ -63,6 +61,7 @@ Database initialization SQL:
         metadata_record TEXT DEFAULT '{}',
         processing_status TEXT NOT NULL,
         chunking_strategy TEXT,
+        chunking_config TEXT DEFAULT '{}',
         post_processing_applied TEXT DEFAULT '[]',
         is_deleted BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -103,6 +102,49 @@ Database initialization SQL:
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Document chunks table (Phase 3: Advanced RAG)
+    CREATE TABLE IF NOT EXISTS document_chunks (
+        -- Primary identification
+        chunk_id TEXT PRIMARY KEY,
+        
+        -- Document relationship
+        doc_uuid TEXT NOT NULL,
+        lineage_uuid TEXT NOT NULL,
+        version_number INTEGER NOT NULL,
+        
+        -- Chunk positioning
+        chunk_index INTEGER NOT NULL,
+        
+        -- Chunking info
+        chunking_strategy TEXT NOT NULL,
+        
+        -- Content (both versions)
+        original_content TEXT NOT NULL,
+        enriched_content TEXT,
+        
+        -- Metadata (JSON stored as TEXT)
+        chunk_metadata TEXT DEFAULT '{}',
+        enrichment_metadata TEXT DEFAULT '{}',
+        chunk_relationships TEXT DEFAULT '{}',
+        
+        -- Timestamps
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        -- Foreign keys
+        FOREIGN KEY (doc_uuid) REFERENCES raw_document_register(doc_uuid),
+        FOREIGN KEY (lineage_uuid) REFERENCES document_lineage(lineage_uuid),
+        
+        -- Unique constraint
+        UNIQUE(doc_uuid, chunk_index)
+    );
+
+    -- Indexes for document_chunks
+    CREATE INDEX IF NOT EXISTS idx_chunks_doc_uuid ON document_chunks(doc_uuid);
+    CREATE INDEX IF NOT EXISTS idx_chunks_lineage ON document_chunks(lineage_uuid);
+    CREATE INDEX IF NOT EXISTS idx_chunks_strategy ON document_chunks(chunking_strategy);
+    CREATE INDEX IF NOT EXISTS idx_chunks_version ON document_chunks(lineage_uuid, version_number);
+
     -- Schema version tracking
     CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -113,5 +155,10 @@ Database initialization SQL:
     -- Insert initial schema version
     INSERT INTO schema_version (version, description) 
     VALUES (1, 'Initial Brain MVP schema') 
+    ON CONFLICT (version) DO NOTHING;
+    
+    -- Insert chunk schema version
+    INSERT INTO schema_version (version, description) 
+    VALUES (2, 'Added document_chunks table for Phase 3')
     ON CONFLICT (version) DO NOTHING;
     

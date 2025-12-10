@@ -6,7 +6,10 @@ FROM python:3.11-slim AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/app/data/.cache/huggingface \
+    TRANSFORMERS_CACHE=/app/data/.cache/transformers \
+    SENTENCE_TRANSFORMERS_HOME=/app/data/.cache/sentence-transformers
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -65,8 +68,11 @@ RUN chown -R appuser:appuser /app
 # Switch to app user
 USER appuser
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/logs /app/uploads /app/processed
+# Create necessary directories (including cache for HuggingFace models)
+RUN mkdir -p /app/data /app/logs /app/uploads /app/processed \
+    /app/data/.cache/huggingface \
+    /app/data/.cache/transformers \
+    /app/data/.cache/sentence-transformers
 
 # Expose port
 EXPOSE 8000
@@ -94,8 +100,11 @@ RUN chown -R appuser:appuser /app
 # Switch to app user
 USER appuser
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/logs /app/uploads /app/processed
+# Create necessary directories (including cache for HuggingFace models)
+RUN mkdir -p /app/data /app/logs /app/uploads /app/processed \
+    /app/data/.cache/huggingface \
+    /app/data/.cache/transformers \
+    /app/data/.cache/sentence-transformers
 
 # Expose port
 EXPOSE 8000

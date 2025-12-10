@@ -126,6 +126,14 @@ class ProcessingConfig(BaseModel):
     enable_chunking: bool = Field(default=True, description="Enable document chunking")
     enable_abbreviation_expansion: bool = Field(default=True, description="Enable abbreviation expansion")
     default_chunk_size: int = Field(default=1000, ge=100, le=5000, description="Default chunk size in characters")
+    
+    # Context enrichment settings (Phase 2)
+    enable_context_enrichment: bool = Field(default=False, description="Enable LLM-based context enrichment for chunks")
+    context_enrichment_model: str = Field(default="gpt-3.5-turbo", description="OpenAI model for context generation")
+    context_enrichment_prompt_style: str = Field(default="default", description="Prompt style: default, short, or structured")
+    context_enrichment_max_words: int = Field(default=100, ge=20, le=200, description="Max words in generated context")
+    context_enrichment_temperature: float = Field(default=0.3, ge=0.0, le=1.0, description="Temperature for context generation")
+    default_chunking_strategy: str = Field(default="recursive", description="Default chunking strategy: recursive, fixed_size, or semantic")
 
 
 class SecurityConfig(BaseModel):

@@ -85,6 +85,427 @@ class BaseChunker(ABC):
         return sorted(list(pages))
 
 
+class RecursiveChunker(BaseChunker):
+    """
+    Recursive character text splitter inspired by LangChain.
+    
+    Splits text using hierarchical delimiters:
+    1. Try to split by paragraphs (\\n\\n)
+    2. If chunks too large, split by sentences (. )
+    3. If still too large, split by words ( )
+    4. As last resort, split by characters
+    
+    This preserves semantic boundaries as much as possible.
+    """
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize recursive chunker."""
+        super().__init__(config)
+        # Hierarchical separators from largest to smallest semantic units
+        self.separators = self.config.get('separators', [
+            "\n\n",    # Paragraphs
+            "\n",      # Lines
+            ". ",      # Sentences
+            "! ",      # Exclamations
+            "? ",      # Questions
+            "; ",      # Clauses
+            ", ",      # Phrases
+            " ",       # Words
+            ""         # Characters (fallback)
+        ])
+    
+    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Chunk document using recursive splitting."""
+        chunks = []
+        chunk_index = 0
+        
+        # Combine all text content
+        all_text = self._extract_full_text(document.content_elements)
+        element_map = self._build_element_map(document.content_elements)
+        
+        # Recursively split the text
+        text_chunks = self._split_text_recursively(all_text, self.separators)
+        
+        # No overlap for first chunk
+        previous_chunk_text = ""
+        
+        for text_chunk in text_chunks:
+            # Add overlap from previous chunk if configured
+            if self.chunk_overlap > 0 and previous_chunk_text:
+                overlap_text = self._get_overlap_text(previous_chunk_text)
+                combined_text = overlap_text + text_chunk
+            else:
+                combined_text = text_chunk
+            
+            # Create chunk
+            chunk_id = f"recursive_chunk_{chunk_index}"
+            source_elements = self._find_source_elements(combined_text, element_map)
+            page_numbers = self._estimate_page_numbers(source_elements, document.content_elements)
+            
+            chunk = self._create_chunk(
+                chunk_id=chunk_id,
+                content=combined_text,
+                chunk_type=ChunkType.TEXT,
+                source_elements=source_elements,
+                chunk_index=chunk_index,
+                page_numbers=page_numbers
+            )
+            
+            if chunk:
+                chunks.append(chunk)
+                previous_chunk_text = text_chunk
+                chunk_index += 1
+        
+        logger.info(f"Created {len(chunks)} recursive chunks")
+        return chunks
+    
+    def _split_text_recursively(self, text: str, separators: List[str]) -> List[str]:
+        """Recursively split text using hierarchical separators."""
+        if not separators or not text:
+            return [text] if text else []
+        
+        # Try current separator
+        separator = separators[0]
+        remaining_separators = separators[1:]
+        
+        if separator == "":
+            # Character-level splitting (last resort)
+            return self._split_by_characters(text)
+        
+        # Split by current separator
+        splits = text.split(separator) if separator else [text]
+        
+        # Process each split
+        final_chunks = []
+        current_chunk = ""
+        
+        for i, split in enumerate(splits):
+            # Add separator back except for last split
+            if i < len(splits) - 1:
+                split = split + separator
+            
+            # Check if adding this split would exceed chunk size
+            test_chunk = current_chunk + split if current_chunk else split
+            
+            if len(test_chunk.split()) <= self.chunk_size:
+                current_chunk = test_chunk
+            else:
+                # Current chunk is full
+                if current_chunk:
+                    final_chunks.append(current_chunk.strip())
+                
+                # If split itself is too large, recursively split it further
+                if len(split.split()) > self.chunk_size:
+                    sub_chunks = self._split_text_recursively(split, remaining_separators)
+                    final_chunks.extend(sub_chunks)
+                    current_chunk = ""
+                else:
+                    current_chunk = split
+        
+        # Add final chunk
+        if current_chunk:
+            final_chunks.append(current_chunk.strip())
+        
+        return [c for c in final_chunks if c]
+    
+    def _split_by_characters(self, text: str) -> List[str]:
+        """Split text by characters when all else fails."""
+        chunks = []
+        # Use character count approximation (avg 5 chars per word)
+        max_chars = self.chunk_size * 5
+        
+        for i in range(0, len(text), max_chars):
+            chunks.append(text[i:i+max_chars])
+        
+        return chunks
+    
+    def _extract_full_text(self, elements: List[ContentElement]) -> str:
+        """Extract all text from content elements."""
+        text_parts = []
+        for element in elements:
+            if element.content_type in [ContentType.PARAGRAPH, ContentType.TEXT, ContentType.HEADING]:
+                text_parts.append(element.content)
+        return "\n\n".join(text_parts)
+    
+    def _build_element_map(self, elements: List[ContentElement]) -> Dict[str, ContentElement]:
+        """Build a map of element IDs to elements."""
+        return {elem.element_id: elem for elem in elements}
+    
+    def _find_source_elements(self, chunk_text: str, element_map: Dict[str, ContentElement]) -> List[str]:
+        """Find which elements contributed to this chunk (simplified)."""
+        # For now, return all element IDs as we don't track exact boundaries
+        return list(element_map.keys())[:5]  # Limit to avoid bloat
+    
+    def _estimate_page_numbers(self, source_elements: List[str], all_elements: List[ContentElement]) -> List[int]:
+        """Estimate page numbers for chunk."""
+        pages = set()
+        for elem in all_elements[:3]:  # Sample first few elements
+            page = elem.metadata.get('page', 1)
+            if isinstance(page, int):
+                pages.add(page)
+        return sorted(list(pages))
+    
+    def _get_overlap_text(self, text: str) -> str:
+        """Get overlap text from previous chunk."""
+        words = text.split()
+        if len(words) <= self.chunk_overlap:
+            return text + " "
+        overlap_words = words[-self.chunk_overlap:]
+        return " ".join(overlap_words) + " "
+
+
+class FixedSizeChunker(BaseChunker):
+    """
+    Simple fixed-size chunking with sliding window overlap.
+    
+    This is the baseline/naive approach for comparison. Splits text
+    into fixed-size chunks based purely on token count, with no regard
+    for semantic boundaries. Uses overlap to prevent sentence truncation.
+    """
+    
+    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Chunk document into fixed-size pieces."""
+        chunks = []
+        chunk_index = 0
+        
+        # Extract all text
+        all_text = self._extract_full_text(document.content_elements)
+        words = all_text.split()
+        
+        # Sliding window chunking
+        i = 0
+        while i < len(words):
+            # Take chunk_size words
+            chunk_words = words[i:i + self.chunk_size]
+            chunk_text = " ".join(chunk_words)
+            
+            # Create chunk
+            chunk_id = f"fixed_chunk_{chunk_index}"
+            
+            chunk = self._create_chunk(
+                chunk_id=chunk_id,
+                content=chunk_text,
+                chunk_type=ChunkType.TEXT,
+                source_elements=[],  # Simplified: no element tracking
+                chunk_index=chunk_index,
+                page_numbers=[]
+            )
+            
+            if chunk:
+                chunks.append(chunk)
+                chunk_index += 1
+            
+            # Move window forward, accounting for overlap
+            i += (self.chunk_size - self.chunk_overlap)
+        
+        logger.info(f"Created {len(chunks)} fixed-size chunks")
+        return chunks
+    
+    def _extract_full_text(self, elements: List[ContentElement]) -> str:
+        """Extract all text from content elements."""
+        text_parts = []
+        for element in elements:
+            if element.content_type in [ContentType.PARAGRAPH, ContentType.TEXT, ContentType.HEADING]:
+                text_parts.append(element.content)
+        return " ".join(text_parts)
+
+
+class EnhancedSemanticChunker(BaseChunker):
+    """
+    Enhanced semantic chunking using embedding similarity.
+    
+    Chunks documents by calculating semantic similarity between
+    adjacent sentences/paragraphs and merging similar ones while
+    splitting on topic changes. This is the highest quality but
+    most expensive strategy.
+    
+    Falls back to sentence-based chunking if embeddings unavailable.
+    """
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize enhanced semantic chunker."""
+        super().__init__(config)
+        self.similarity_threshold = self.config.get('similarity_threshold', 0.75)
+        self.use_embeddings = self.config.get('use_embeddings', False)
+        
+        # Try to initialize embedding model
+        self.embed_model = None
+        if self.use_embeddings:
+            try:
+                from sentence_transformers import SentenceTransformer
+                model_name = self.config.get('embedding_model', 'sentence-transformers/all-MiniLM-L6-v2')
+                self.embed_model = SentenceTransformer(model_name)
+                logger.info(f"Initialized semantic chunker with embeddings: {model_name}")
+            except ImportError:
+                logger.warning("sentence-transformers not available, falling back to heuristic semantic chunking")
+                self.use_embeddings = False
+    
+    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Chunk document based on semantic similarity."""
+        if self.use_embeddings and self.embed_model:
+            return self._chunk_with_embeddings(document)
+        else:
+            return self._chunk_with_heuristics(document)
+    
+    def _chunk_with_embeddings(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Chunk using actual embedding similarity."""
+        chunks = []
+        chunk_index = 0
+        
+        # Split into sentences
+        sentences, sentence_elements = self._extract_sentences(document.content_elements)
+        
+        if not sentences:
+            return chunks
+        
+        # Calculate embeddings
+        embeddings = self.embed_model.encode(sentences)
+        
+        # Group sentences by similarity
+        current_group = [sentences[0]]
+        current_elements = [sentence_elements[0]]
+        
+        for i in range(1, len(sentences)):
+            # Calculate cosine similarity with previous sentence
+            similarity = self._cosine_similarity(embeddings[i-1], embeddings[i])
+            
+            # If similar enough, add to current group
+            if similarity >= self.similarity_threshold and len(" ".join(current_group + [sentences[i]]).split()) <= self.chunk_size:
+                current_group.append(sentences[i])
+                current_elements.append(sentence_elements[i])
+            else:
+                # Create chunk from current group
+                chunk = self._create_semantic_group_chunk(current_group, current_elements, chunk_index)
+                if chunk:
+                    chunks.append(chunk)
+                    chunk_index += 1
+                
+                # Start new group
+                current_group = [sentences[i]]
+                current_elements = [sentence_elements[i]]
+        
+        # Add final group
+        if current_group:
+            chunk = self._create_semantic_group_chunk(current_group, current_elements, chunk_index)
+            if chunk:
+                chunks.append(chunk)
+        
+        logger.info(f"Created {len(chunks)} semantic chunks using embeddings")
+        return chunks
+    
+    def _chunk_with_heuristics(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Fallback: Use heuristic-based semantic grouping."""
+        # Use the existing simplified semantic chunker logic
+        chunks = []
+        chunk_index = 0
+        
+        # Group elements by semantic similarity (simplified)
+        semantic_groups = self._identify_semantic_groups_heuristic(document.content_elements)
+        
+        for group in semantic_groups:
+            chunk = self._create_semantic_chunk_from_elements(group, chunk_index)
+            if chunk:
+                chunks.append(chunk)
+                chunk_index += 1
+        
+        logger.info(f"Created {len(chunks)} semantic chunks using heuristics")
+        return chunks
+    
+    def _extract_sentences(self, elements: List[ContentElement]) -> Tuple[List[str], List[ContentElement]]:
+        """Extract sentences from content elements."""
+        sentences = []
+        sentence_elements = []
+        
+        for element in elements:
+            if element.content_type in [ContentType.PARAGRAPH, ContentType.TEXT]:
+                # Simple sentence splitting
+                element_sentences = re.split(r'[.!?]+\s+', element.content)
+                for sent in element_sentences:
+                    if sent.strip():
+                        sentences.append(sent.strip())
+                        sentence_elements.append(element)
+        
+        return sentences, sentence_elements
+    
+    def _cosine_similarity(self, vec1, vec2) -> float:
+        """Calculate cosine similarity between two vectors."""
+        import numpy as np
+        return float(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+    
+    def _create_semantic_group_chunk(self, sentences: List[str], elements: List[ContentElement], chunk_index: int) -> Optional[ChunkData]:
+        """Create chunk from semantic sentence group."""
+        if not sentences:
+            return None
+        
+        content = " ".join(sentences)
+        chunk_id = f"semantic_chunk_{chunk_index}"
+        source_elements = list(set(elem.element_id for elem in elements))
+        page_numbers = self._get_page_numbers(elements)
+        
+        return self._create_chunk(
+            chunk_id=chunk_id,
+            content=content,
+            chunk_type=ChunkType.TEXT,
+            source_elements=source_elements,
+            chunk_index=chunk_index,
+            page_numbers=page_numbers
+        )
+    
+    def _identify_semantic_groups_heuristic(self, elements: List[ContentElement]) -> List[List[ContentElement]]:
+        """Identify semantic groups using heuristics."""
+        groups = []
+        current_group = []
+        current_word_count = 0
+        
+        for element in elements:
+            element_words = len(element.content.split())
+            
+            # Simple heuristic: group elements until we hit a heading or size limit
+            if (element.content_type == ContentType.HEADING and current_group) or \
+               (current_word_count + element_words > self.chunk_size and current_group):
+                
+                groups.append(current_group)
+                current_group = [element]
+                current_word_count = element_words
+            else:
+                current_group.append(element)
+                current_word_count += element_words
+        
+        if current_group:
+            groups.append(current_group)
+        
+        return groups
+    
+    def _create_semantic_chunk_from_elements(self, elements: List[ContentElement], chunk_index: int) -> Optional[ChunkData]:
+        """Create semantic chunk from content elements."""
+        if not elements:
+            return None
+        
+        content = "\n\n".join(elem.content for elem in elements)
+        chunk_id = f"semantic_chunk_{chunk_index}"
+        source_elements = [elem.element_id for elem in elements]
+        page_numbers = self._get_page_numbers(elements)
+        
+        # Determine chunk type based on dominant content type
+        type_counts = {}
+        for elem in elements:
+            type_counts[elem.content_type] = type_counts.get(elem.content_type, 0) + 1
+        
+        dominant_type = max(type_counts, key=type_counts.get)
+        chunk_type = ChunkType.MIXED if len(type_counts) > 2 else ChunkType.TEXT
+        
+        return self._create_chunk(
+            chunk_id=chunk_id,
+            content=content,
+            chunk_type=chunk_type,
+            source_elements=source_elements,
+            chunk_index=chunk_index,
+            page_numbers=page_numbers
+        )
+
+
+
+
 class ParagraphChunker(BaseChunker):
     """Chunks documents by paragraphs."""
     
@@ -572,13 +993,15 @@ class DocumentChunker:
     def _create_chunker(self) -> BaseChunker:
         """Create the appropriate chunker based on strategy."""
         chunker_map = {
+            ChunkingStrategy.RECURSIVE: RecursiveChunker,  # New: LangChain-style recursive splitting
+            ChunkingStrategy.FIXED_SIZE: FixedSizeChunker,  # New: Simple fixed-size baseline
             ChunkingStrategy.PARAGRAPH: ParagraphChunker,
             ChunkingStrategy.SENTENCE: SentenceChunker,
             ChunkingStrategy.SECTION_BASED: SectionChunker,
-            ChunkingStrategy.SEMANTIC: SemanticChunker,
+            ChunkingStrategy.SEMANTIC: EnhancedSemanticChunker,  # Updated: Enhanced with embeddings
         }
         
-        chunker_class = chunker_map.get(self.strategy, ParagraphChunker)
+        chunker_class = chunker_map.get(self.strategy, RecursiveChunker)  # Default to recursive
         return chunker_class(self.config)
     
     def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
@@ -667,3 +1090,80 @@ class DocumentChunker:
             "total_words": sum(word_counts),
             "total_characters": sum(char_counts)
         }
+    
+    def enrich_chunks_with_context(
+        self,
+        chunks: List[ChunkData],
+        full_document_text: str,
+        document_metadata: Optional[Dict[str, Any]] = None
+    ) -> List[ChunkData]:
+        """Enrich chunks with document-level context using LLM.
+        
+        Args:
+            chunks: List of chunks to enrich
+            full_document_text: Full document text for context
+            document_metadata: Optional metadata for structured prompts
+            
+        Returns:
+            List of enriched chunks (or original if enrichment disabled/fails)
+        """
+        # Check if enrichment is enabled
+        if not self.config.get('enrich_contexts', False):
+            logger.debug("Context enrichment disabled in config")
+            return chunks
+        
+        try:
+            # Import here to avoid circular dependency
+            from docforge.enrichment import ContextEnricher
+            
+            # Get API key from config
+            api_key = self.config.get('openai_api_key')
+            if not api_key:
+                logger.warning("No OpenAI API key provided - skipping context enrichment")
+                return chunks
+            
+            # Initialize enricher
+            enricher = ContextEnricher(
+                api_key=api_key,
+                model=self.config.get('context_model', 'gpt-3.5-turbo'),
+                prompt_style=self.config.get('context_prompt_style', 'default'),
+                max_context_words=self.config.get('context_max_words', 100),
+                temperature=self.config.get('context_temperature', 0.3)
+            )
+            
+            if not enricher.is_enabled:
+                logger.warning("Context enricher not enabled - skipping enrichment")
+                return chunks
+            
+            # Enrich each chunk
+            enriched_chunks = []
+            for i, chunk in enumerate(chunks):
+                logger.debug(f"Enriching chunk {i+1}/{len(chunks)}: {chunk.chunk_id}")
+                
+                # Generate enriched content
+                enriched_content = enricher.enrich_chunk(
+                    whole_document=full_document_text,
+                    chunk_content=chunk.content,
+                    metadata=document_metadata
+                )
+                
+                # Update chunk with enriched content if different
+                if enriched_content != chunk.content:
+                    # Store original content in metadata
+                    chunk.metadata.original_content = chunk.content
+                    chunk.metadata.enriched = True
+                    chunk.content = enriched_content
+                    logger.debug(f"Chunk {chunk.chunk_id} enriched successfully")
+                
+                enriched_chunks.append(chunk)
+            
+            logger.info(f"Successfully enriched {len(enriched_chunks)} chunks")
+            return enriched_chunks
+            
+        except ImportError as e:
+            logger.error(f"Could not import ContextEnricher: {e}")
+            return chunks
+        except Exception as e:
+            logger.error(f"Error enriching chunks: {e}")
+            # Gracefully fallback to original chunks
+            return chunks

@@ -220,7 +220,8 @@ def create_standardized_output(
     # Calculate document structure
     element_counts = {}
     for element in content_elements:
-        element_type = element.content_type.value
+        # content_type is already a string due to use_enum_values=True
+        element_type = element.content_type if isinstance(element.content_type, str) else element.content_type.value
         element_counts[element_type] = element_counts.get(element_type, 0) + 1
     
     document_structure = DocumentStructure(
@@ -233,22 +234,25 @@ def create_standardized_output(
     # Generate plain text
     plain_text = "\n".join([
         element.content for element in content_elements
-        if element.content_type in [ContentType.TEXT, ContentType.PARAGRAPH, ContentType.HEADING]
+        if element.content_type in [ContentType.TEXT.value, ContentType.PARAGRAPH.value, ContentType.HEADING.value]
     ])
     
     # Generate markdown text (basic implementation)
     markdown_lines = []
     for element in content_elements:
-        if element.content_type == ContentType.HEADING:
+        # Element content_type is already a string value due to use_enum_values=True
+        content_type = element.content_type
+        
+        if content_type == ContentType.HEADING.value or content_type == "heading":
             level = element.metadata.get("level", 1)
             markdown_lines.append(f"{'#' * level} {element.content}")
-        elif element.content_type == ContentType.PARAGRAPH:
+        elif content_type == ContentType.PARAGRAPH.value or content_type == "paragraph":
             markdown_lines.append(element.content)
-        elif element.content_type == ContentType.LIST:
+        elif content_type == ContentType.LIST.value or content_type == "list":
             markdown_lines.append(f"- {element.content}")
-        elif element.content_type == ContentType.CODE:
+        elif content_type == ContentType.CODE.value or content_type == "code":
             markdown_lines.append(f"```\n{element.content}\n```")
-        elif element.content_type == ContentType.QUOTE:
+        elif content_type == ContentType.QUOTE.value or content_type == "quote":
             markdown_lines.append(f"> {element.content}")
         else:
             markdown_lines.append(element.content)
