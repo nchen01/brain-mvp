@@ -163,6 +163,8 @@ class VersionManager:
                 timestamp=datetime.utcnow()
             )
             
+        except DuplicateDocumentError:
+            raise
         except Exception as e:
             logger.error(f"Error registering version: {e}")
             raise DocumentVersionError(f"Failed to register version: {str(e)}")

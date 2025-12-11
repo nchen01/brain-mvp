@@ -52,7 +52,7 @@ class BaseChunker(ABC):
         character_count = len(content)
         
         # Skip chunks that are too small (but be more lenient for testing)
-        min_size = max(10, self.min_chunk_size)  # Allow smaller chunks for testing
+        min_size = self.min_chunk_size  # Use configured size directly
         if word_count < min_size:
             return None
         

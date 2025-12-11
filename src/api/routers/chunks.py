@@ -1,8 +1,7 @@
-"""Chunk management API endpoints."""
-
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 import logging
+import os
 
 from storage.chunk_storage import ChunkStorage
 
@@ -26,7 +25,7 @@ async def get_document_chunks(
         Document chunks with metadata
     """
     try:
-        storage = ChunkStorage()
+        storage = ChunkStorage(db_path=os.getenv('STORAGE__CHUNK_DB_PATH', 'data/brain_mvp.db'))
         chunks = storage.get_chunks_by_document(doc_uuid, include_enriched)
         
         if not chunks:
@@ -59,7 +58,7 @@ async def get_chunk(chunk_id: str):
         Chunk data with metadata
     """
     try:
-        storage = ChunkStorage()
+        storage = ChunkStorage(db_path=os.getenv('STORAGE__CHUNK_DB_PATH', 'data/brain_mvp.db'))
         chunk = storage.get_chunk_by_id(chunk_id)
         
         if not chunk:
@@ -92,7 +91,7 @@ async def get_chunks_by_strategy(
         List of chunks using the specified strategy
     """
     try:
-        storage = ChunkStorage()
+        storage = ChunkStorage(db_path=os.getenv('STORAGE__CHUNK_DB_PATH', 'data/brain_mvp.db'))
         chunks = storage.get_chunks_by_strategy(strategy)
         
         # Limit results
@@ -117,7 +116,7 @@ async def get_chunk_statistics():
         Statistics about stored chunks
     """
     try:
-        storage = ChunkStorage()
+        storage = ChunkStorage(db_path=os.getenv('STORAGE__CHUNK_DB_PATH', 'data/brain_mvp.db'))
         stats = storage.get_statistics()
         
         return stats
@@ -138,7 +137,7 @@ async def delete_document_chunks(doc_uuid: str):
         Number of chunks deleted
     """
     try:
-        storage = ChunkStorage()
+        storage = ChunkStorage(db_path=os.getenv('STORAGE__CHUNK_DB_PATH', 'data/brain_mvp.db'))
         deleted_count = storage.delete_chunks_by_document(doc_uuid)
         
         if deleted_count == 0:

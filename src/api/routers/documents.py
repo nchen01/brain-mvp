@@ -18,12 +18,17 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from docforge.versioning.versions import VersionManager
-from docforge.versioning.models import DocumentRegistrationRequest, DocumentRegistrationResponse, DocumentVersionModel
+from docforge.versioning.models import DocumentRegistrationRequest, DocumentRegistrationResponse, DocumentVersionModel, VersionBranchRequest
+from core.exceptions import DocumentVersionError, DuplicateDocumentError
 from docforge.preprocessing.processor_factory import ProcessorFactory
 from docforge.postprocessing.router import PostProcessingRouter
 from docforge.storage.post_document_db import PostDocumentDatabase
-from docforge.storage.meta_document_db import MetaDocumentDatabase
+from docforge.storage.meta_document_db import MetaDocumentDatabase, MetaDocumentComponent
+from docforge.storage.schemas import StorageConfig, DocumentMetadata
 from docforge.rag.lightrag_integration import LightRAGIntegration
+from storage.chunk_storage import ChunkStorage
+from docforge.postprocessing.chunker import DocumentChunker
+from docforge.postprocessing.schemas import ChunkingStrategy
 from config.config_manager import ConfigManager
 from utils.error_handling import handle_async_errors, ErrorCategory, ErrorSeverity
 
@@ -169,53 +174,81 @@ async def upload_document(
             # Create new version of existing document
             logger.info(f"Creating new version with parent: {parent_version_id}")
             
-            # Validate parent version exists
+            # Create branch request
+            branch_request = VersionBranchRequest(
+                lineage_uuid=parent_version_id, # This might be wrong, need to check if parent_version_id is lineage or version
+                source_version=1, # This is also tricky without looking up the parent
+                filename=file.filename,
+                user_id=current_user.user_id if current_user else 'anonymous',
+                file_size=file_size,
+                metadata={
+                    **doc_metadata,
+                    'content_hash': content_hash
+                }
+            )
+            
+            # We need to look up the parent version first to get lineage and version number
             parent_version = await version_manager.get_version(parent_version_id)
             if not parent_version:
                 raise HTTPException(status_code=404, detail="Parent version not found")
+                
+            branch_request.lineage_uuid = parent_version.lineage_uuid
+            branch_request.source_version = parent_version.version_number
             
-            # Create new version in same lineage
-            version_result = version_manager.create_version(
-                document_id=parent_version.document_id,
-                content=file_content.decode('utf-8', errors='ignore'),
-                metadata={
-                    **doc_metadata,
-                    'filename': file.filename,
-                    'content_type': file.content_type,
-                    'file_size': file_size,
-                    'content_hash': content_hash
-                },
-                parent_version_id=parent_version_id
+            # Create version branch
+            version_response = await version_manager.create_version_branch(
+                branch_request,
+                file_content
             )
+            
+            version_result = version_response.doc_uuid
+            document_id = version_response.doc_uuid
+            
         else:
             # Create new document (new lineage)
             logger.info(f"Creating new document: {file.filename}")
             
-            # Generate new document ID
-            document_id = str(uuid.uuid4())
-            
-            # Create first version
-            version_result = version_manager.create_version(
-                document_id=document_id,
-                content=file_content.decode('utf-8', errors='ignore'),
+            # Create registration request
+            reg_request = DocumentRegistrationRequest(
+                filename=file.filename,
+                file_type=file.filename.split('.')[-1] if '.' in file.filename else 'unknown',
+                file_size=file_size,
+                user_id=current_user.user_id if current_user else 'anonymous',
                 metadata={
                     **doc_metadata,
-                    'filename': file.filename,
-                    'content_type': file.content_type,
-                    'file_size': file_size,
                     'content_hash': content_hash
                 }
             )
+            
+            # Register version
+            try:
+                version_response = await version_manager.register_version(
+                    reg_request,
+                    file_content
+                )
+            except DuplicateDocumentError as e:
+                logger.warning(f"Duplicate document detected: {e}")
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Document already exists",
+                        "existing_document_id": e.details.get("existing_doc_uuid"),
+                        "file_hash": e.details.get("file_hash")
+                    }
+                )
+            
+            version_result = version_response.doc_uuid
+            document_id = version_response.doc_uuid
         
         # Get version info
-        version_info = version_manager.get_version_sync(version_result)
+        version_info = await version_manager.get_version(version_result)
         if not version_info:
             raise HTTPException(status_code=500, detail="Failed to retrieve created version")
         
         # Create processing task
         task_id = str(uuid.uuid4())
         processing_tasks[task_id] = {
-            'document_id': version_info['document_id'],
+            'document_id': version_info.doc_uuid,
             'version_id': version_result,
             'status': 'pending',
             'stage': 'queued',
@@ -228,16 +261,16 @@ async def upload_document(
         # Start background processing
         background_tasks.add_task(
             process_document_async,
-            version_result,
+            version_info.doc_uuid, # Changed from version_result to version_info.doc_uuid
             file_content,
             file.filename,
             task_id
         )
         
         return DocumentUploadResponse(
-            document_id=version_info['document_id'],
-            lineage_id=version_info['document_id'],  # For now, using document_id as lineage_id
-            version_number=1,  # Will be properly calculated in production
+            document_id=version_info.doc_uuid,
+            lineage_id=version_info.lineage_uuid,
+            version_number=version_info.version_number,
             filename=file.filename,
             file_size=file_size,
             content_hash=content_hash,
@@ -948,9 +981,172 @@ async def process_document_async(
             'progress': 75.0
         })
         
-        # Store processed document
-        # This would store in PostDocumentDatabase
+        # Initialize storage components
+        import os
+        storage_config = StorageConfig(
+            database_url=os.getenv('STORAGE__POST_DB_PATH', 'sqlite:///data/post_documents.db'),
+            enable_compression=True
+        )
+        post_db = PostDocumentDatabase(config=storage_config)
+        meta_db = MetaDocumentDatabase()
+        chunk_storage = ChunkStorage()
         
+        # Store processed document
+        # We need to get the document_id and lineage_id from the version
+        # For now, we'll query the version manager or assume we have them
+        # Since we don't have direct access to version details here easily without querying,
+        # we'll use the version_id to find the document_id and lineage_id if possible,
+        # or rely on what we have.
+        # Actually, we can get version info from version_manager
+        version_manager = VersionManager()
+        version_info = await version_manager.get_version(version_id)
+        
+        if not version_info:
+             raise Exception(f"Version not found: {version_id}")
+             
+        document_id = version_info.doc_uuid
+        lineage_id = version_info.lineage_uuid
+        version_number = version_info.version_number
+        
+        # Store in PostDocumentDatabase
+        post_doc_id = post_db.store_document(
+            file_uuid=document_id,
+            source_file_path=version_info.file_path,
+            source_content=result.output.plain_text,
+            metadata=DocumentMetadata(
+                file_type=version_info.file_type,
+                file_size=version_info.file_size,
+                creation_date=version_info.timestamp,
+                custom_metadata=version_info.metadata
+            )
+        )
+        logger.info(f"Stored processed document: {post_doc_id}")
+        
+        # Generate set_uuid
+        set_uuid = task_id 
+        
+        # Convert content elements to components
+        components = []
+        for i, element in enumerate(result.output.content_elements):
+            components.append(MetaDocumentComponent(
+                component_id=element.element_id,
+                component_type=element.content_type,
+                content=element.content,
+                metadata=element.metadata,
+                order_index=i,
+                confidence_score=element.confidence
+            ))
+            
+        # Create Meta Document
+        meta_doc_id = meta_db.create_meta_document(
+            doc_uuid=document_id,
+            set_uuid=set_uuid,
+            title=filename,
+            summary=result.output.document_metadata.get('summary', ''),
+            components=components
+        )
+        logger.info(f"Created meta document: {meta_doc_id}")
+
+        # Chunking (Stage 3.5)
+        processing_tasks[task_id].update({
+            'stage': 'chunking',
+            'progress': 80.0
+        })
+        
+        # Get chunking configuration
+        import os
+        # Get chunking configuration
+        import os
+        # settings = ConfigManager.get_processing_config()
+        
+        # Determine strategy
+        strategy_name = os.getenv('PROCESSING__DEFAULT_CHUNKING_STRATEGY', 'recursive').upper()
+        try:
+            strategy = ChunkingStrategy[strategy_name]
+        except KeyError:
+            strategy = ChunkingStrategy.RECURSIVE
+            
+        # Configure chunker
+        chunker_config = {
+            'chunk_size': int(os.getenv('PROCESSING__DEFAULT_CHUNK_SIZE', 800)),
+            'chunk_overlap': int(os.getenv('PROCESSING__CHUNK_OVERLAP', 100)),
+            'min_chunk_size': int(os.getenv('PROCESSING__MIN_CHUNK_SIZE', 5))
+        }
+        
+        # Context enrichment config
+        if os.getenv('PROCESSING__ENABLE_CONTEXT_ENRICHMENT', 'false').lower() == 'true':
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                chunker_config.update({
+                    'enrich_contexts': True,
+                    'openai_api_key': api_key,
+                    'context_model': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MODEL', 'gpt-3.5-turbo'),
+                    'context_prompt_style': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_PROMPT_STYLE', 'default'),
+                    'context_max_words': int(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MAX_WORDS', 100)),
+                    'context_temperature': float(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_TEMPERATURE', 0.3))
+                })
+        
+        # Perform chunking
+        # Perform chunking
+        logger.info(f"Chunking document {document_id} with strategy {strategy_name}")
+        
+        chunker = DocumentChunker(strategy=strategy, config=chunker_config)
+        chunks = chunker.chunk_document(result.output)
+        
+        logger.info(f"Generated {len(chunks)} chunks")
+        
+        # Enrich chunks if enabled
+        if chunker_config.get('enrich_contexts'):
+            chunks = chunker.enrich_chunks_with_context(
+                chunks=chunks,
+                full_document_text=result.output.plain_text,
+                document_metadata={
+                    'doc_uuid': document_id,
+                    'lineage_uuid': lineage_id,
+                    'version': version_number,
+                    'filename': filename
+                }
+            )
+            
+        # Convert chunks to dicts for storage
+        chunk_dicts = []
+        for chunk in chunks:
+            # Default: content is chunk.content
+            content = chunk.content
+            enriched_content = None
+            
+            # Check if enrichment happened (swapped content)
+            # We check for original_content in metadata because chunker swaps them
+            if hasattr(chunk.metadata, 'original_content') and chunk.metadata.original_content:
+                content = chunk.metadata.original_content
+                enriched_content = chunk.content
+            
+            chunk_dict = {
+                'content': content,
+                'metadata': {
+                    'word_count': chunk.metadata.word_count,
+                    'character_count': chunk.metadata.character_count,
+                    'chunk_type': chunk.chunk_type.value if hasattr(chunk.chunk_type, 'value') else str(chunk.chunk_type),
+                },
+                'relationships': chunk.relationships
+            }
+            
+            if enriched_content:
+                chunk_dict['enriched_content'] = enriched_content
+                chunk_dict['enrichment_metadata'] = {'enriched': True}
+                
+            chunk_dicts.append(chunk_dict)
+            
+        # Store chunks
+        stored_chunk_ids = chunk_storage.store_chunks(
+            doc_uuid=document_id,
+            lineage_uuid=lineage_id,
+            version_number=version_number,
+            chunks=chunk_dicts,
+            chunking_strategy=strategy_name.lower()
+        )
+        logger.info(f"Stored {len(stored_chunk_ids)} chunks for document {document_id}")
+
         # Stage 4: RAG Preparation
         processing_tasks[task_id].update({
             'stage': 'rag_preparation',

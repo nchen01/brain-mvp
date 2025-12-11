@@ -24,12 +24,42 @@ class ChunkStorage:
         """
         self.db_path = db_path
         self._ensure_database()
+        self._init_db()
     
     def _ensure_database(self):
-        """Ensure database and tables exist."""
-        db_file = Path(self.db_path)
-        if not db_file.exists():
-            logger.warning(f"Database not found at {self.db_path}")
+        """Ensure database directory exists."""
+        db_dir = Path(self.db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+        
+    def _init_db(self):
+        """Initialize database tables."""
+        conn = self._get_connection()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS document_chunks (
+                    chunk_id TEXT PRIMARY KEY,
+                    doc_uuid TEXT NOT NULL,
+                    lineage_uuid TEXT NOT NULL,
+                    version_number INTEGER NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    chunking_strategy TEXT NOT NULL,
+                    original_content TEXT NOT NULL,
+                    enriched_content TEXT,
+                    chunk_metadata TEXT NOT NULL, -- JSON
+                    enrichment_metadata TEXT, -- JSON
+                    chunk_relationships TEXT, -- JSON
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            
+            # Create indexes
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc_uuid ON document_chunks(doc_uuid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_strategy ON document_chunks(chunking_strategy)")
+            
+            conn.commit()
+        finally:
+            conn.close()
     
     def _get_connection(self) -> sqlite3.Connection:
         """Get database connection.

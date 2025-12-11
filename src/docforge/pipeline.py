@@ -25,8 +25,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from core.models import RawDocument, ProcessedDocument
-from docforge.versioning.lineage import DocumentLineageManager
-from docforge.versioning.models import DocumentVersion
+from docforge.versioning.lineage import LineageManager
+from docforge.versioning.models import DocumentVersionModel
 from docforge.preprocessing.router import DocumentPreprocessingRouter
 from docforge.preprocessing.processor_factory import ProcessorFactory
 from docforge.postprocessing.router import PostProcessingRouter
@@ -76,15 +76,29 @@ class PipelineConfig:
     upload_dir: str = "./data/uploads"
     processed_dir: str = "./data/processed"
     
-    # RAG configuration
-    lightrag_dir: str = "./data/lightrag"
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # RAG Configuration
+    lightrag_dir: str = "./data/lightrag" # Kept from original, as it's not explicitly removed by the instruction
+    enable_rag_preparation: bool = True
     chunk_size: int = 1000
-    chunk_overlap: int = 200
+    chunk_overlap: int = 100
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    max_concurrent_documents: int = 5
+    
+    # Chunking Configuration (Phase 6)
+    enable_chunking: bool = True
+    default_chunking_strategy: str = "recursive"
+    default_chunk_size: int = 800
+    min_chunk_size: int = 30
+    
+    # Context Enrichment Configuration (Phase 2)
+    enable_context_enrichment: bool = False
+    context_enrichment_model: str = "gpt-3.5-turbo"
+    context_enrichment_prompt_style: str = "default"
+    context_enrichment_max_words: int = 100
+    context_enrichment_temperature: float = 0.3
     
     # Processing options
     enable_postprocessing: bool = True
-    enable_rag_preparation: bool = True
     enable_abbreviation_expansion: bool = True
     
     # Performance settings
@@ -115,7 +129,7 @@ class DocForgePipeline:
         """Initialize all pipeline components."""
         try:
             # Versioning and lineage management
-            self.lineage_manager = DocumentLineageManager(self.config.raw_db_path)
+            self.lineage_manager = LineageManager()
             
             # Document registration
             self.document_register = DocumentRegister(self.config.raw_db_path)
