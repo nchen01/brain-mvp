@@ -14,6 +14,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=INFO
       - PYTHONPATH=/app/src
+      - PROCESSING__DEFAULT_CHUNKING_STRATEGY=${PROCESSING__DEFAULT_CHUNKING_STRATEGY:-recursive}
+      - PROCESSING__USE_EMBEDDINGS=${PROCESSING__USE_EMBEDDINGS:-false}
+      - PROCESSING__EMBEDDING_MODEL=${PROCESSING__EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - .:/app
       - ./data:/app/data

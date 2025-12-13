@@ -17,17 +17,32 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Placeholder for EnhancedSemanticChunker if it's not yet defined in the context
+# In a real scenario, this would be imported or defined elsewhere.
+class EnhancedSemanticChunker:
+    def __init__(self, config: Dict[str, Any]):
+        # Simulate initialization
+        pass
+    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        # Simulate semantic chunking
+        return []
+
 
 class BaseChunker(ABC):
     """Base class for document chunkers."""
     
     def __init__(self, config: Dict[str, Any] = None):
-        """Initialize the chunker."""
+        """
+        Initialize the chunker.
+        
+        Args:
+            config: Configuration dictionary
+        """
         self.config = config or {}
-        self.chunk_size = self.config.get('chunk_size', 300)
-        self.chunk_overlap = self.config.get('chunk_overlap', 50)
+        self.chunk_size = self.config.get('chunk_size', 800)
+        self.chunk_overlap = self.config.get('chunk_overlap', 100)
         self.language = self.config.get('language', 'en')
-        self.min_chunk_size = self.config.get('min_chunk_size', 50)
+        self.min_chunk_size = self.config.get('min_chunk_size', 5)
     
     @abstractmethod
     def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:

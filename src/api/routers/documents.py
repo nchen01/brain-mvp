@@ -1008,7 +1008,22 @@ async def process_document_async(
         lineage_id = version_info.lineage_uuid
         version_number = version_info.version_number
         
+        # Process document
+        print(f"DEBUG: Starting processing for {filename}", flush=True)
+        result = processor.process_document(
+            file_path=version_info.file_path,
+            file_content=None  # Read from path
+        )
+        print(f"DEBUG: Processing complete for {filename}", flush=True)
+        
+        # Update status
+        processing_tasks[task_id].update({
+            'stage': 'storing',
+            'progress': 60.0
+        })
+        
         # Store in PostDocumentDatabase
+        print(f"DEBUG: Storing document in PostDocumentDatabase", flush=True)
         post_doc_id = post_db.store_document(
             file_uuid=document_id,
             source_file_path=version_info.file_path,
@@ -1021,6 +1036,7 @@ async def process_document_async(
             )
         )
         logger.info(f"Stored processed document: {post_doc_id}")
+        print(f"DEBUG: Stored processed document: {post_doc_id}", flush=True)
         
         # Generate set_uuid
         set_uuid = task_id 
@@ -1038,6 +1054,7 @@ async def process_document_async(
             ))
             
         # Create Meta Document
+        print(f"DEBUG: Creating meta document", flush=True)
         meta_doc_id = meta_db.create_meta_document(
             doc_uuid=document_id,
             set_uuid=set_uuid,
@@ -1045,55 +1062,66 @@ async def process_document_async(
             summary=result.output.document_metadata.get('summary', ''),
             components=components
         )
-        logger.info(f"Created meta document: {meta_doc_id}")
+        print(f"DEBUG: Created meta document: {meta_doc_id}", flush=True)
+        print(f"DEBUG: Proceeding to chunking setup", flush=True)
 
-        # Chunking (Stage 3.5)
-        processing_tasks[task_id].update({
-            'stage': 'chunking',
-            'progress': 80.0
-        })
-        
-        # Get chunking configuration
-        import os
-        # Get chunking configuration
-        import os
-        # settings = ConfigManager.get_processing_config()
-        
-        # Determine strategy
-        strategy_name = os.getenv('PROCESSING__DEFAULT_CHUNKING_STRATEGY', 'recursive').upper()
+        import time
+        import sys
+        print(f"DEBUG: Sleeping 1s", flush=True)
+        time.sleep(1)
+        print(f"DEBUG: Woke up", flush=True)
+
         try:
-            strategy = ChunkingStrategy[strategy_name]
-        except KeyError:
-            strategy = ChunkingStrategy.RECURSIVE
+            # Chunking (Stage 3.5)
+            processing_tasks[task_id].update({
+                'stage': 'chunking',
+                'progress': 80.0
+            })
             
-        # Configure chunker
-        chunker_config = {
-            'chunk_size': int(os.getenv('PROCESSING__DEFAULT_CHUNK_SIZE', 800)),
-            'chunk_overlap': int(os.getenv('PROCESSING__CHUNK_OVERLAP', 100)),
-            'min_chunk_size': int(os.getenv('PROCESSING__MIN_CHUNK_SIZE', 5))
-        }
-        
-        # Context enrichment config
-        if os.getenv('PROCESSING__ENABLE_CONTEXT_ENRICHMENT', 'false').lower() == 'true':
-            api_key = os.getenv('OPENAI_API_KEY')
-            if api_key:
-                chunker_config.update({
-                    'enrich_contexts': True,
-                    'openai_api_key': api_key,
-                    'context_model': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MODEL', 'gpt-3.5-turbo'),
-                    'context_prompt_style': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_PROMPT_STYLE', 'default'),
-                    'context_max_words': int(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MAX_WORDS', 100)),
-                    'context_temperature': float(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_TEMPERATURE', 0.3))
-                })
-        
-        # Perform chunking
-        # Perform chunking
-        logger.info(f"Chunking document {document_id} with strategy {strategy_name}")
-        
-        chunker = DocumentChunker(strategy=strategy, config=chunker_config)
-        chunks = chunker.chunk_document(result.output)
-        
-        logger.info(f"Generated {len(chunks)} chunks")
+            # Get chunking configuration
+            import os
+            
+            # Determine strategy
+            strategy_name = os.getenv('PROCESSING__DEFAULT_CHUNKING_STRATEGY', 'recursive').upper()
+            
+            try:
+                strategy = ChunkingStrategy[strategy_name]
+            except KeyError:
+                strategy = ChunkingStrategy.RECURSIVE
+                
+            # Configure chunker
+            chunker_config = {
+                'chunk_size': int(os.getenv('PROCESSING__DEFAULT_CHUNK_SIZE', 800)),
+                'chunk_overlap': int(os.getenv('PROCESSING__CHUNK_OVERLAP', 100)),
+                'min_chunk_size': int(os.getenv('PROCESSING__MIN_CHUNK_SIZE', 5)),
+                'use_embeddings': os.getenv('PROCESSING__USE_EMBEDDINGS', 'false').lower() == 'true',
+                'embedding_model': os.getenv('PROCESSING__EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
+            }
+            
+            # Context enrichment config
+            if os.getenv('PROCESSING__ENABLE_CONTEXT_ENRICHMENT', 'false').lower() == 'true':
+                api_key = os.getenv('OPENAI_API_KEY')
+                if api_key:
+                    chunker_config.update({
+                        'enrich_contexts': True,
+                        'openai_api_key': api_key,
+                        'context_model': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MODEL', 'gpt-3.5-turbo'),
+                        'context_prompt_style': os.getenv('PROCESSING__CONTEXT_ENRICHMENT_PROMPT_STYLE', 'default'),
+                        'context_max_words': int(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MAX_WORDS', 100)),
+                        'context_temperature': float(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_TEMPERATURE', 0.3))
+                    })
+            
+            # Perform chunking
+            logger.info(f"Chunking document {document_id} with strategy {strategy_name}")
+            
+            chunker = DocumentChunker(strategy=strategy, config=chunker_config)
+            chunks = chunker.chunk_document(result.output)
+            
+            logger.info(f"Generated {len(chunks)} chunks")
+        except Exception as e:
+            print(f"DEBUG: CRASH CAUGHT: {e}", file=sys.stderr, flush=True)
+            logger.error(f"CRASH CAUGHT: {e}")
+            raise
         
         # Enrich chunks if enabled
         if chunker_config.get('enrich_contexts'):

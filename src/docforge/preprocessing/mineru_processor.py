@@ -101,8 +101,11 @@ class MinerUProcessor(BaseDocumentProcessor):
             )
             
             # Generate text representations
+            print(f"DEBUG: Generating plain text", flush=True)
             plain_text = self._generate_plain_text(content_elements)
+            print(f"DEBUG: Generating markdown", flush=True)
             markdown_text = self._generate_markdown(content_elements, tables, images)
+            print(f"DEBUG: Text generation complete", flush=True)
             
             return StandardizedDocumentOutput(
                 content_elements=content_elements,
@@ -375,6 +378,7 @@ class MinerUProcessor(BaseDocumentProcessor):
         elements = []
         
         for i, item in enumerate(mineru_result.get("content", [])):
+            print(f"DEBUG: Processing element {i}", flush=True)
             element_id = f"element_{i+1}"
             
             # Map MinerU content types to our standard types
