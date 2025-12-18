@@ -377,9 +377,10 @@ class MinerUProcessor(BaseDocumentProcessor):
         """Convert MinerU result to standardized content elements."""
         elements = []
         
+        import uuid
         for i, item in enumerate(mineru_result.get("content", [])):
-            print(f"DEBUG: Processing element {i}", flush=True)
-            element_id = f"element_{i+1}"
+            # Use UUID to ensure global uniqueness for component_id in database
+            element_id = str(uuid.uuid4())
             
             # Map MinerU content types to our standard types
             content_type_map = {

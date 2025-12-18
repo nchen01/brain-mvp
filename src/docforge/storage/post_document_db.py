@@ -194,6 +194,7 @@ class PostDocumentDatabase:
     ) -> str:
         """Store a new document record."""
         doc_record = PostDocumentRecord(
+            doc_uuid=file_uuid,  # Use file_uuid as doc_uuid for consistency
             file_uuid=file_uuid,
             source_file_path=source_file_path,
             source_file_hash=self._calculate_hash(source_content),

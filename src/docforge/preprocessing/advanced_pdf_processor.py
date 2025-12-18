@@ -113,7 +113,8 @@ class AdvancedPDFProcessor(BaseDocumentProcessor):
                 output = create_standardized_output(
                     content_elements=content_elements,
                     processing_metadata=processing_metadata,
-                    processing_status=ProcessingStatus.SUCCESS
+                    processing_status=ProcessingStatus.SUCCESS,
+                    total_pages=mock_result.get('total_pages', 1)
                 )
                 
                 return ProcessingResult(
@@ -168,8 +169,10 @@ class AdvancedPDFProcessor(BaseDocumentProcessor):
             # Method 1: Try PyMuPDF (fitz) - excellent for text and metadata
             try:
                 doc = self.fitz.open(file_path)
-                pymupdf_text = ""
+                metadata['pages_processed'] = len(doc)
+                metadata['pdf_metadata'] = doc.metadata
                 
+                pymupdf_text = ""
                 for page_num in range(len(doc)):
                     page = doc.load_page(page_num)
                     pymupdf_text += page.get_text()
@@ -178,8 +181,6 @@ class AdvancedPDFProcessor(BaseDocumentProcessor):
                 if pymupdf_text.strip():
                     extracted_content = pymupdf_text.strip()
                     metadata['libraries_used'].append('PyMuPDF')
-                    metadata['pages_processed'] = len(doc)
-                    metadata['pdf_metadata'] = doc.metadata
                 
                 doc.close()
                 logger.info(f"PyMuPDF extracted {len(extracted_content)} characters")
@@ -273,7 +274,8 @@ class AdvancedPDFProcessor(BaseDocumentProcessor):
             output = create_standardized_output(
                 content_elements=content_elements,
                 processing_metadata=processing_metadata,
-                processing_status=ProcessingStatus.SUCCESS
+                processing_status=ProcessingStatus.SUCCESS,
+                total_pages=metadata.get('pages_processed')
             )
             
             logger.info(f"Advanced PDF processing completed. Extracted {len(extracted_content)} characters using {metadata['libraries_used']}")

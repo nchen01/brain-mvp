@@ -130,6 +130,70 @@ async def get_config_manager() -> ConfigManager:
 processing_tasks: Dict[str, Dict[str, Any]] = {}
 
 
+@router.get("/", response_model=List[Dict[str, Any]])
+async def list_documents(
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional)
+):
+    """
+    List all uploaded documents.
+    
+    Returns a list of all documents with their latest version information.
+    """
+    try:
+        # Query database directly
+        from dbm.operations import get_db_operations
+        
+        db = get_db_operations()
+        
+        # Get all active versions grouped by lineage
+        query = """
+            SELECT 
+                v1.doc_uuid,
+                v1.lineage_uuid,
+                v1.filename,
+                v1.version_number,
+                v1.file_size,
+                v1.timestamp,
+                v1.file_type
+            FROM raw_document_register v1
+            INNER JOIN (
+                SELECT lineage_uuid, MAX(version_number) as max_version
+                FROM raw_document_register
+                WHERE status = 'active'
+                GROUP BY lineage_uuid
+            ) v2 ON v1.lineage_uuid = v2.lineage_uuid 
+                AND v1.version_number = v2.max_version
+            WHERE v1.status = 'active'
+            ORDER BY v1.timestamp DESC
+        """
+        
+        rows = db.execute_query(query, fetch=True)
+        
+        # Handle None result
+        if rows is None:
+            rows = []
+        
+        # Format response
+        documents = []
+        for row in rows:
+            documents.append({
+                "document_id": row['doc_uuid'],
+                "lineage_id": row['lineage_uuid'],
+                "filename": row['filename'],
+                "version_number": row['version_number'],
+                "file_size": row['file_size'],
+                "upload_timestamp": row['timestamp'],
+                "file_type": row['file_type']
+            })
+        
+        return documents
+    except Exception as e:
+        logger.error(f"Error listing documents: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
+
+
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     background_tasks: BackgroundTasks,
@@ -279,6 +343,9 @@ async def upload_document(
             processing_queue_id=task_id
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions to preserve status codes (e.g., 409 for duplicates)
+        raise
     except Exception as e:
         logger.error(f"Error uploading document: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
@@ -488,6 +555,95 @@ async def get_processing_status(
     except Exception as e:
         logger.error(f"Error getting processing status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: str,
+    format: str = Query("json", description="Response format: json, text, markdown"),
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional)
+):
+    """
+    Get processed document content.
+    
+    - **document_id**: Document UUID
+    - **format**: Response format (json, text, markdown)
+    """
+    try:
+        # Initialize PostDocumentDatabase with correct configuration
+        from docforge.storage.post_document_db import PostDocumentDatabase
+        from docforge.storage.schemas import StorageConfig
+        
+        # Create minimal config
+        config = StorageConfig(
+            database_url="sqlite:///data/post_documents.db",
+            enable_compression=False
+        )
+        post_db = PostDocumentDatabase(config=config)
+        
+        # Retrieve document from PostDocumentDatabase
+        doc = post_db.get_document(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get the source content from chunks
+        source_content = ""
+        if doc.processing_versions:
+            latest_version = doc.get_latest_version()
+            if latest_version and latest_version.chunks:
+                # Reconstruct text from chunks
+                source_content = "\n\n".join([chunk.content for chunk in latest_version.chunks])
+        
+        # If still empty, try to get from chunk storage
+        if not source_content:
+            from storage.chunk_storage import ChunkStorage
+            chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
+            chunks = chunk_storage.get_chunks_by_document(document_id)
+            if chunks:
+                # Filter out None values and join
+                valid_chunks = [chunk.get('original_content') for chunk in chunks if chunk.get('original_content')]
+                if valid_chunks:
+                    source_content = "\n\n".join(valid_chunks)
+        
+        # Return based on format
+        if format == "text":
+            return {"extracted_text": source_content}
+        elif format == "markdown":
+            return {"extracted_text": source_content}
+        else:  # json
+            # Get file size safely
+            file_size = 0
+            if doc.metadata and hasattr(doc.metadata, 'file_size'):
+                file_size = doc.metadata.file_size
+            
+            # Get filename from path
+            import os
+            filename = os.path.basename(doc.source_file_path) if doc.source_file_path else "document"
+            
+            return {
+                "document_id": document_id,
+                "filename": filename,
+                "file_size": file_size,
+                "extracted_content": {
+                    "raw_text": source_content,
+                    "text_length": len(source_content),
+                    "estimated_words": len(source_content.split()),
+                    "estimated_paragraphs": source_content.count("\n\n") + 1
+                },
+                "metadata": {
+                    "processing_details": {
+                        "libraries_used": ["AdvancedPDFProcessor"],
+                        "pages_processed": doc.metadata.page_count if doc.metadata and hasattr(doc.metadata, 'page_count') and doc.metadata.page_count else 1
+                    }
+                }
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document content: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get content: {str(e)}")
 
 
 @router.get("/{document_id}/download")
@@ -1011,6 +1167,7 @@ async def process_document_async(
         # Process document
         print(f"DEBUG: Starting processing for {filename}", flush=True)
         result = processor.process_document(
+            filename=filename,
             file_path=version_info.file_path,
             file_content=None  # Read from path
         )
@@ -1032,6 +1189,7 @@ async def process_document_async(
                 file_type=version_info.file_type,
                 file_size=version_info.file_size,
                 creation_date=version_info.timestamp,
+                page_count=result.output.document_structure.total_pages if result.output.document_structure else None,
                 custom_metadata=version_info.metadata
             )
         )

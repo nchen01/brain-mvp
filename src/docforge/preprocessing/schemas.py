@@ -213,6 +213,7 @@ def create_standardized_output(
     content_elements: List[ContentElement],
     processing_metadata: ProcessingMetadata,
     processing_status: ProcessingStatus = ProcessingStatus.SUCCESS,
+    total_pages: Optional[int] = None,
     **kwargs
 ) -> StandardizedDocumentOutput:
     """Helper function to create standardized document output."""
@@ -225,6 +226,7 @@ def create_standardized_output(
         element_counts[element_type] = element_counts.get(element_type, 0) + 1
     
     document_structure = DocumentStructure(
+        total_pages=total_pages,
         total_elements=len(content_elements),
         element_counts=element_counts,
         has_tables="table" in element_counts,

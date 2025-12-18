@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,45 +11,45 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        
+
         .container {
             max-width: 800px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             overflow: hidden;
         }
-        
+
         .header {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
             color: white;
             padding: 30px;
             text-align: center;
         }
-        
+
         .header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
             font-weight: 300;
         }
-        
+
         .header p {
             opacity: 0.9;
             font-size: 1.1em;
         }
-        
+
         .content {
             padding: 40px;
         }
-        
+
         .upload-section {
             background: #f8f9fa;
             border-radius: 15px;
@@ -58,22 +59,22 @@
             text-align: center;
             transition: all 0.3s ease;
         }
-        
+
         .upload-section:hover {
             border-color: #4facfe;
             background: #f0f8ff;
         }
-        
+
         .upload-section.dragover {
             border-color: #4facfe;
             background: #e3f2fd;
             transform: scale(1.02);
         }
-        
+
         .file-input {
             display: none;
         }
-        
+
         .upload-button {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
             color: white;
@@ -85,12 +86,12 @@
             transition: all 0.3s ease;
             margin: 10px;
         }
-        
+
         .upload-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(79, 172, 254, 0.3);
         }
-        
+
         .process-button {
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
@@ -103,18 +104,18 @@
             margin: 10px;
             display: none;
         }
-        
+
         .process-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(17, 153, 142, 0.3);
         }
-        
+
         .process-button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
-        
+
         .file-info {
             background: white;
             border-radius: 10px;
@@ -123,20 +124,20 @@
             border-left: 4px solid #4facfe;
             display: none;
         }
-        
+
         .status-section {
             margin-top: 30px;
             display: none;
         }
-        
+
         .status-card {
             background: white;
             border-radius: 15px;
             padding: 25px;
             border-left: 5px solid #4facfe;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
         }
-        
+
         .status-badge {
             display: inline-block;
             padding: 8px 16px;
@@ -146,12 +147,27 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
-        .status-pending { background: #fff3cd; color: #856404; }
-        .status-processing { background: #d1ecf1; color: #0c5460; }
-        .status-completed { background: #d4edda; color: #155724; }
-        .status-failed { background: #f8d7da; color: #721c24; }
-        
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-processing {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
         .progress-bar {
             width: 100%;
             height: 8px;
@@ -160,7 +176,7 @@
             overflow: hidden;
             margin: 15px 0;
         }
-        
+
         .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
@@ -168,65 +184,68 @@
             transition: width 0.3s ease;
             width: 0%;
         }
-        
+
         .results-section {
             margin-top: 30px;
             display: none;
         }
-        
+
         .results-card {
             background: #f8f9fa;
             border-radius: 15px;
             padding: 25px;
             border: 1px solid #dee2e6;
         }
-        
+
         .content-preview {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 25px;
             margin: 15px 0;
-            border: 1px solid #dee2e6;
-            max-height: 300px;
+            border: 1px solid #e9ecef;
+            max-height: 500px;
             overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            line-height: 1.5;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 1em;
+            line-height: 1.6;
+            color: #212529;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+            white-space: pre-wrap;
         }
-        
+
         .metadata {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             margin: 20px 0;
         }
-        
+
         .metadata-item {
             background: white;
             padding: 15px;
             border-radius: 10px;
             border: 1px solid #dee2e6;
         }
-        
+
         .metadata-label {
             font-weight: 600;
             color: #495057;
             font-size: 0.9em;
             margin-bottom: 5px;
         }
-        
+
         .metadata-value {
             color: #6c757d;
             font-size: 1.1em;
         }
-        
+
         .download-buttons {
             display: flex;
             gap: 10px;
             margin-top: 20px;
             flex-wrap: wrap;
         }
-        
+
         .download-button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -238,12 +257,12 @@
             text-decoration: none;
             display: inline-block;
         }
-        
+
         .download-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
         }
-        
+
         .error-message {
             background: #f8d7da;
             color: #721c24;
@@ -252,7 +271,7 @@
             margin: 15px 0;
             border: 1px solid #f5c6cb;
         }
-        
+
         .loading {
             display: inline-block;
             width: 20px;
@@ -263,12 +282,17 @@
             animation: spin 1s linear infinite;
             margin-right: 10px;
         }
-        
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
-        
+
         .api-info {
             background: #e3f2fd;
             border-radius: 10px;
@@ -276,30 +300,237 @@
             margin-top: 30px;
             border-left: 4px solid #2196f3;
         }
-        
+
         .api-info h3 {
             color: #1976d2;
             margin-bottom: 10px;
         }
-        
+
         .api-info a {
             color: #1976d2;
             text-decoration: none;
         }
-        
+
         .api-info a:hover {
             text-decoration: underline;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .tab-button {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            font-size: 1em;
+            font-weight: 600;
+            color: #6c757d;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            color: #4facfe;
+        }
+
+        .tab-button.active {
+            color: #4facfe;
+            border-bottom-color: #4facfe;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Chunk Cards */
+        .chunks-grid {
+            display: grid;
+            gap: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .chunk-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .chunk-card:hover {
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            border-color: #4facfe;
+        }
+
+        .chunk-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.85em;
+            color: #6c757d;
+            border-bottom: 1px solid #f1f3f5;
+            padding-bottom: 8px;
+        }
+
+        .chunk-id {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .chunk-badges {
+            display: flex;
+            gap: 5px;
+        }
+
+        .chunk-badge {
+            font-size: 0.8em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .chunk-badge.semantic {
+            background: #e3f2fd;
+            color: #0d47a1;
+        }
+
+        .chunk-badge.recursive {
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .chunk-content {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            color: #212529;
+        }
+
+        .chunk-enriched {
+            border-left: 4px solid #4facfe;
+            background-color: #f8fbff;
+        }
+
+        .enrichment-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #4facfe;
+            font-size: 1.2em;
+        }
+
+        /* Existing Documents */
+        .existing-documents-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .existing-documents-section h2 {
+            margin-bottom: 20px;
+            color: #495057;
+        }
+
+        .documents-list {
+            display: grid;
+            gap: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .document-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .document-item:hover {
+            border-color: #4facfe;
+            box-shadow: 0 3px 10px rgba(79, 172, 254, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .document-info {
+            flex: 1;
+        }
+
+        .document-name {
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 5px;
+        }
+
+        .document-meta {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+
+        .document-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .view-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .view-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 10px rgba(79, 172, 254, 0.3);
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
             <h1>🧠 Brain MVP</h1>
             <p>Advanced PDF Document Processing System</p>
         </div>
-        
+
         <div class="content">
+            <!-- Existing Documents Section -->
+            <div class="existing-documents-section" id="existingDocumentsSection">
+                <h2>📚 Existing Documents</h2>
+                <div id="documentsList" class="documents-list">
+                    <div style="text-align: center; padding: 20px; color: #6c757d;">
+                        Loading documents...
+                    </div>
+                </div>
+            </div>
+
             <!-- Upload Section -->
             <div class="upload-section" id="uploadSection">
                 <h2>📄 Upload Your PDF Document</h2>
@@ -320,7 +551,7 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Status Section -->
             <div class="status-section" id="statusSection">
                 <div class="status-card">
@@ -337,48 +568,70 @@
                     <div id="statusDetails"></div>
                 </div>
             </div>
-            
+
             <!-- Results Section -->
             <div class="results-section" id="resultsSection">
                 <div class="results-card">
-                    <h3>📋 Extraction Results</h3>
-                    
-                    <div class="metadata" id="metadata">
-                        <!-- Metadata will be populated here -->
+                    <h3>📋 Processing Results</h3>
+
+                    <div class="tabs">
+                        <button class="tab-button active" onclick="switchTab('extraction')">Extraction</button>
+                        <button class="tab-button" onclick="switchTab('chunks')">Chunks</button>
                     </div>
-                    
-                    <h4>📝 Extracted Content Preview:</h4>
-                    <div class="content-preview" id="contentPreview">
-                        <!-- Content preview will be shown here -->
+
+                    <!-- Extraction View -->
+                    <div id="extractionView" class="tab-content active">
+                        <div class="metadata" id="metadata">
+                            <!-- Metadata will be populated here -->
+                        </div>
+
+                        <h4>📝 Extracted Content Preview:</h4>
+                        <div class="content-preview" id="contentPreview">
+                            <!-- Content preview will be shown here -->
+                        </div>
+
+                        <div class="download-buttons">
+                            <button class="download-button" onclick="downloadContent('text')">
+                                📄 Download Text
+                            </button>
+                            <button class="download-button" onclick="downloadContent('json')">
+                                📊 Download JSON
+                            </button>
+                            <button class="download-button" onclick="downloadContent('markdown')">
+                                📝 Download Markdown
+                            </button>
+                        </div>
                     </div>
-                    
-                    <div class="download-buttons">
-                        <button class="download-button" onclick="downloadContent('text')">
-                            📄 Download Text
-                        </button>
-                        <button class="download-button" onclick="downloadContent('json')">
-                            📊 Download JSON
-                        </button>
-                        <button class="download-button" onclick="downloadContent('markdown')">
-                            📝 Download Markdown
-                        </button>
+
+                    <!-- Chunks View -->
+                    <div id="chunksView" class="tab-content">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4>🧩 Document Chunks</h4>
+                            <div id="chunkStats" style="font-size: 0.9em; color: #6c757d;"></div>
+                        </div>
+                        <div class="chunks-grid" id="chunksGrid">
+                            <div style="text-align: center; padding: 20px; color: #6c757d;">
+                                Loading chunks...
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-            
+
             <!-- API Information -->
             <div class="api-info">
                 <h3>🔧 Developer Resources</h3>
                 <p>
-                    <strong>API Documentation:</strong> 
+                    <strong>API Documentation:</strong>
                     <a href="/docs" target="_blank">Interactive Swagger UI</a>
                 </p>
                 <p>
-                    <strong>System Health:</strong> 
+                    <strong>System Health:</strong>
                     <a href="/health" target="_blank">Health Check</a>
                 </p>
                 <p>
-                    <strong>Base API URL:</strong> 
+                    <strong>Base API URL:</strong>
                     <code>http://localhost:8000/api/v1/</code>
                 </p>
             </div>
@@ -389,27 +642,83 @@
         let currentDocumentId = null;
         let currentFile = null;
         let statusCheckInterval = null;
-        
+
+        // Load existing documents on page load
+        window.addEventListener('DOMContentLoaded', loadExistingDocuments);
+
         // File input handling
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
-        
+
+        // Load existing documents
+        async function loadExistingDocuments() {
+            const documentsList = document.getElementById('documentsList');
+
+            try {
+                const response = await fetch('/api/v1/documents/');
+                if (!response.ok) {
+                    throw new Error(`Failed to load documents: ${response.statusText}`);
+                }
+
+                const documents = await response.json();
+
+                if (documents.length === 0) {
+                    documentsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #6c757d;">No documents uploaded yet.</div>';
+                    return;
+                }
+
+                documentsList.innerHTML = documents.map(doc => `
+                    <div class="document-item" onclick="viewDocument('${doc.document_id}')">
+                        <div class="document-info">
+                            <div class="document-name">${doc.filename}</div>
+                            <div class="document-meta">
+                                ${formatFileSize(doc.file_size)} • Uploaded ${new Date(doc.upload_timestamp).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div class="document-actions">
+                            <button class="view-button" onclick="event.stopPropagation(); viewDocument('${doc.document_id}')">
+                                View
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                documentsList.innerHTML = '<div class="error-message">Failed to load documents.</div>';
+            }
+        }
+
+        // View an existing document
+        async function viewDocument(documentId) {
+            currentDocumentId = documentId;
+
+            // Show results section
+            const resultsSection = document.getElementById('resultsSection');
+            if (resultsSection) resultsSection.style.display = 'block';
+
+            // Load document content
+            await loadResults();
+        }
+
+        // File input handling
+
         // Drag and drop handling
         const uploadSection = document.getElementById('uploadSection');
-        
+
         uploadSection.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadSection.classList.add('dragover');
         });
-        
+
         uploadSection.addEventListener('dragleave', (e) => {
             e.preventDefault();
             uploadSection.classList.remove('dragover');
         });
-        
+
         uploadSection.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadSection.classList.remove('dragover');
-            
+
             const files = e.dataTransfer.files;
             if (files.length > 0 && files[0].type === 'application/pdf') {
                 handleFile(files[0]);
@@ -417,49 +726,49 @@
                 showError('Please select a valid PDF file.');
             }
         });
-        
+
         function handleFileSelect(event) {
             const file = event.target.files[0];
             if (file) {
                 handleFile(file);
             }
         }
-        
+
         function handleFile(file) {
             if (file.type !== 'application/pdf') {
                 showError('Please select a PDF file.');
                 return;
             }
-            
+
             currentFile = file;
-            
+
             // Show file info
             const fileName = document.getElementById('fileName');
             const fileSize = document.getElementById('fileSize');
             const fileInfo = document.getElementById('fileInfo');
             const processButton = document.getElementById('processButton');
-            
+
             if (fileName) fileName.textContent = file.name;
             if (fileSize) fileSize.textContent = formatFileSize(file.size);
             if (fileInfo) fileInfo.style.display = 'block';
             if (processButton) processButton.style.display = 'inline-block';
-            
+
             // Hide previous results
             const statusSection = document.getElementById('statusSection');
             const resultsSection = document.getElementById('resultsSection');
             if (statusSection) statusSection.style.display = 'none';
             if (resultsSection) resultsSection.style.display = 'none';
         }
-        
+
         async function uploadAndProcess() {
             if (!currentFile) {
                 showError('Please select a file first.');
                 return;
             }
-            
+
             const processButton = document.getElementById('processButton');
             const loadingSpinner = document.getElementById('loadingSpinner');
-            
+
             // Show loading state
             if (processButton) {
                 processButton.disabled = true;
@@ -468,72 +777,86 @@
             if (loadingSpinner) {
                 loadingSpinner.style.display = 'inline-block';
             }
-            
+
             try {
                 // Upload file
                 const formData = new FormData();
                 formData.append('file', currentFile);
-                
+
                 const response = await fetch('/api/v1/documents/upload', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 if (!response.ok) {
+                    // Handle duplicate document (409 Conflict)
+                    if (response.status === 409) {
+                        const errorData = await response.json();
+                        const existingDocId = errorData.existing_document_id;
+
+                        // Show user-friendly message
+                        showError(`This document already exists in the system. Click "View" on the existing document below to see its content and chunks.`);
+
+                        // Refresh document list to show the existing document
+                        await loadExistingDocuments();
+
+                        resetProcessButton();
+                        return;
+                    }
                     throw new Error(`Upload failed: ${response.statusText}`);
                 }
-                
+
                 const result = await response.json();
                 currentDocumentId = result.document_id;
-                
+
                 // Show status section
                 const documentIdElement = document.getElementById('documentId');
                 const statusSection = document.getElementById('statusSection');
-                
+
                 if (documentIdElement) documentIdElement.textContent = currentDocumentId;
                 if (statusSection) statusSection.style.display = 'block';
-                
+
                 // Start status monitoring
                 startStatusMonitoring();
-                
+
             } catch (error) {
                 showError(`Upload failed: ${error.message}`);
                 resetProcessButton();
             }
         }
-        
+
         function startStatusMonitoring() {
             updateStatus();
             statusCheckInterval = setInterval(updateStatus, 2000);
         }
-        
+
         async function updateStatus() {
             if (!currentDocumentId) {
                 console.warn('No document ID available for status check');
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/v1/documents/${currentDocumentId}/status`);
                 if (!response.ok) {
                     throw new Error(`Status check failed: ${response.statusText}`);
                 }
-                
+
                 const status = await response.json();
-                
+
                 // Update status badge
                 const statusBadge = document.getElementById('statusBadge');
                 if (statusBadge) {
                     statusBadge.textContent = status.status;
                     statusBadge.className = `status-badge status-${status.status}`;
                 }
-                
+
                 // Update progress bar
                 const progressFill = document.getElementById('progressFill');
                 if (progressFill) {
                     progressFill.style.width = `${status.progress || 0}%`;
                 }
-                
+
                 // Update status details
                 const statusDetails = document.getElementById('statusDetails');
                 if (statusDetails) {
@@ -546,7 +869,7 @@
                     </div>
                 `;
                 }
-                
+
                 // Check if processing is complete
                 if (status.status === 'completed') {
                     clearInterval(statusCheckInterval);
@@ -556,7 +879,7 @@
                     clearInterval(statusCheckInterval);
                     resetProcessButton();
                 }
-                
+
             } catch (error) {
                 console.error('Status check error:', error);
                 showError(`Status check failed: ${error.message}`);
@@ -568,25 +891,25 @@
                 resetProcessButton();
             }
         }
-        
+
         async function loadResults() {
             try {
                 const response = await fetch(`/api/v1/documents/${currentDocumentId}/content?format=json`);
                 if (!response.ok) {
                     throw new Error(`Failed to load results: ${response.statusText}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 // Show results section
                 const resultsSection = document.getElementById('resultsSection');
                 if (resultsSection) resultsSection.style.display = 'block';
-                
+
                 // Populate metadata
                 const metadata = document.getElementById('metadata');
                 const extractedContent = data.extracted_content || {};
                 const processingDetails = data.metadata?.processing_details || {};
-                
+
                 if (metadata) {
                     metadata.innerHTML = `
                     <div class="metadata-item">
@@ -615,7 +938,7 @@
                     </div>
                 `;
                 }
-                
+
                 // Show content preview
                 const contentPreview = document.getElementById('contentPreview');
                 if (contentPreview) {
@@ -623,41 +946,43 @@
                     const preview = rawText.length > 1000 ? rawText.substring(0, 1000) + '...' : rawText;
                     contentPreview.textContent = preview || 'No text content extracted.';
                 }
-                
+
             } catch (error) {
                 showError(`Failed to load results: ${error.message}`);
             }
         }
-        
+
         async function downloadContent(format) {
             if (!currentDocumentId) return;
-            
+
             try {
                 const response = await fetch(`/api/v1/documents/${currentDocumentId}/content?format=${format}`);
                 if (!response.ok) {
                     throw new Error(`Download failed: ${response.statusText}`);
                 }
-                
+
                 let content, filename, mimeType;
-                
+                const data = await response.json();
+
+                // Use filename from API or fallback
+                const baseFilename = data.filename || (currentFile ? currentFile.name : `document_${currentDocumentId}`);
+
                 if (format === 'json') {
-                    const data = await response.json();
                     content = JSON.stringify(data, null, 2);
-                    filename = `${currentFile.name}_extracted.json`;
+                    filename = `${baseFilename}_extracted.json`;
                     mimeType = 'application/json';
                 } else {
-                    const data = await response.json();
                     if (format === 'text') {
                         content = data.extracted_text || '';
-                        filename = `${currentFile.name}_extracted.txt`;
+                        filename = `${baseFilename}_extracted.txt`;
                         mimeType = 'text/plain';
                     } else if (format === 'markdown') {
                         content = data.extracted_text || ''; // API doesn't return markdown yet
-                        filename = `${currentFile.name}_extracted.md`;
+                        filename = `${baseFilename}_extracted.md`;
                         mimeType = 'text/markdown';
                     }
                 }
-                
+
                 // Create and trigger download
                 const blob = new Blob([content], { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -668,16 +993,16 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                
+
             } catch (error) {
                 showError(`Download failed: ${error.message}`);
             }
         }
-        
+
         function resetProcessButton() {
             const processButton = document.getElementById('processButton');
             const loadingSpinner = document.getElementById('loadingSpinner');
-            
+
             if (processButton) {
                 processButton.disabled = false;
                 processButton.innerHTML = 'Process Document';
@@ -686,21 +1011,21 @@
                 loadingSpinner.style.display = 'none';
             }
         }
-        
+
         function showError(message) {
             // Remove existing error messages
             const existingErrors = document.querySelectorAll('.error-message');
             existingErrors.forEach(error => error.remove());
-            
+
             // Create new error message
             const errorDiv = document.createElement('div');
             errorDiv.className = 'error-message';
             errorDiv.textContent = message;
-            
+
             // Insert after upload section
             const uploadSection = document.getElementById('uploadSection');
             uploadSection.parentNode.insertBefore(errorDiv, uploadSection.nextSibling);
-            
+
             // Auto-remove after 5 seconds
             setTimeout(() => {
                 if (errorDiv.parentNode) {
@@ -708,7 +1033,7 @@
                 }
             }, 5000);
         }
-        
+
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -716,6 +1041,84 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
+
+        // Tab Handling
+        function switchTab(tabName) {
+            // Update buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.toLowerCase().includes(tabName)) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`${tabName}View`).classList.add('active');
+
+            // Load chunks if switching to chunks tab
+            if (tabName === 'chunks' && currentDocumentId) {
+                loadChunks();
+            }
+        }
+
+        // Chunk Handling
+        async function loadChunks() {
+            const chunksGrid = document.getElementById('chunksGrid');
+            const chunkStats = document.getElementById('chunkStats');
+
+            try {
+                const response = await fetch(`/api/v1/chunks/document/${currentDocumentId}`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        chunksGrid.innerHTML = '<div style="text-align: center; padding: 20px;">No chunks found for this document.</div>';
+                        return;
+                    }
+                    throw new Error(`Failed to load chunks: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const chunks = data.chunks || [];
+
+                // Update stats
+                if (chunkStats) {
+                    chunkStats.textContent = `${chunks.length} chunks found`;
+                }
+
+                // Render chunks
+                if (chunks.length === 0) {
+                    chunksGrid.innerHTML = '<div style="text-align: center; padding: 20px;">No chunks generated.</div>';
+                    return;
+                }
+
+                chunksGrid.innerHTML = chunks.map(chunk => {
+                    const isEnriched = chunk.metadata?.enriched || false;
+                    const strategy = chunk.metadata?.chunk_type || 'unknown';
+                    const wordCount = chunk.metadata?.word_count || 0;
+
+                    return `
+                        <div class="chunk-card ${isEnriched ? 'chunk-enriched' : ''}">
+                            <div class="chunk-header">
+                                <span class="chunk-id">#${chunk.chunk_index}</span>
+                                <div class="chunk-badges">
+                                    <span class="chunk-badge ${strategy.toLowerCase()}">${strategy}</span>
+                                    <span class="chunk-badge">${wordCount} words</span>
+                                </div>
+                            </div>
+                            <div class="chunk-content">${chunk.content}</div>
+                            ${isEnriched ? '<div class="enrichment-indicator" title="Enriched Content">✨</div>' : ''}
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading chunks:', error);
+                chunksGrid.innerHTML = `<div class="error-message">Failed to load chunks: ${error.message}</div>`;
+            }
+        }
     </script>
 </body>
+
 </html>

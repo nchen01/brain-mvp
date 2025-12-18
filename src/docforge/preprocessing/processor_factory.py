@@ -26,8 +26,9 @@ class ProcessorFactory:
         try:
             # Register all processors for full functionality
             
-            # MinerU processor for advanced PDF processing
-            mineru_processor = MinerUProcessor()
+            # Advanced PDF processor (uses PyMuPDF/pdfplumber)
+            from .advanced_pdf_processor import AdvancedPDFProcessor
+            mineru_processor = AdvancedPDFProcessor()
             processor_registry.register_processor("mineru", mineru_processor)
             
             # Text processor for basic text files
