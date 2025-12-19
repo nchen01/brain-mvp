@@ -400,7 +400,7 @@ docker-compose up brain-mvp
 docker-compose exec brain-mvp python -m pytest tests/
 
 # Run end-to-end tests
-docker-compose exec brain-mvp python final_e2e_test.py
+docker-compose exec brain-mvp python tests/final_e2e_test.py
 
 # Test specific PDF processing
 docker-compose exec brain-mvp python -c "

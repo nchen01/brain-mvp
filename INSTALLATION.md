@@ -60,7 +60,7 @@ print('✅ Database initialized')
 
 ```bash
 # Run basic tests
-python -m pytest tests/unit/test_logging_system.py -v
+python -m pytest tests/test_chunk_storage.py -v
 
 # Test the logging system
 python -c "

@@ -97,7 +97,7 @@ docker-compose logs -f brain-mvp
 docker-compose restart brain-mvp
 
 # Run end-to-end tests
-docker-compose exec brain-mvp python final_e2e_test.py
+docker-compose exec brain-mvp python tests/final_e2e_test.py
 ```
 
 ---
@@ -136,4 +136,4 @@ This project is licensed under the MIT License.
 For technical support or feature requests, please check the following:
 1. **Technical Overview**: [`PROJECT_EXPLANATION.md`](PROJECT_EXPLANATION.md)
 2. **User Guide**: [`USAGE_GUIDE.md`](USAGE_GUIDE.md)
-3. **Test Results**: [`END_TO_END_TEST_RESULTS.md`](END_TO_END_TEST_RESULTS.md)
+3. **Test Results**: [`END_TO_END_TEST_RESULTS.md`](tests/results/END_TO_END_TEST_RESULTS.md)

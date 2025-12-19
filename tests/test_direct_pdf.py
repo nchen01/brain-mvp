@@ -9,7 +9,7 @@ import requests
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from docforge.preprocessing.advanced_pdf_processor import AdvancedPDFProcessor
 from docforge.postprocessing.chunker import DocumentChunker
