@@ -510,6 +510,22 @@
             transform: translateY(-2px);
             box-shadow: 0 5px 10px rgba(79, 172, 254, 0.3);
         }
+
+        .delete-button {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .delete-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 10px rgba(255, 107, 107, 0.4);
+        }
     </style>
 </head>
 
@@ -666,21 +682,29 @@
                     return;
                 }
 
-                documentsList.innerHTML = documents.map(doc => `
-                    <div class="document-item" onclick="viewDocument('${doc.document_id}')">
-                        <div class="document-info">
-                            <div class="document-name">${doc.filename}</div>
-                            <div class="document-meta">
-                                ${formatFileSize(doc.file_size)} • Uploaded ${new Date(doc.upload_timestamp).toLocaleDateString()}
+                documentsList.innerHTML = documents.map(doc => {
+                    const safeFilename = (doc.filename || 'Document')
+                        .replace(/\\/g, '\\\\')
+                        .replace(/'/g, "\\'");
+                    return `
+                        <div class="document-item" onclick="viewDocument('${doc.document_id}')">
+                            <div class="document-info">
+                                <div class="document-name">${doc.filename}</div>
+                                <div class="document-meta">
+                                    ${formatFileSize(doc.file_size)} • Uploaded ${new Date(doc.upload_timestamp).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <div class="document-actions">
+                                <button class="view-button" onclick="event.stopPropagation(); viewDocument('${doc.document_id}')">
+                                    View
+                                </button>
+                                <button class="delete-button" onclick="event.stopPropagation(); deleteDocument('${doc.document_id}', '${safeFilename}')">
+                                    Delete
+                                </button>
                             </div>
                         </div>
-                        <div class="document-actions">
-                            <button class="view-button" onclick="event.stopPropagation(); viewDocument('${doc.document_id}')">
-                                View
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
 
             } catch (error) {
                 console.error('Error loading documents:', error);
@@ -698,6 +722,54 @@
 
             // Load document content
             await loadResults();
+        }
+
+        async function deleteDocument(documentId, filename) {
+            const confirmed = confirm(`Delete "${filename || 'this document'}"? This will remove the stored version so you can upload it again.`);
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v1/documents/${documentId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        reason: 'user_request',
+                        permanent: false
+                    })
+                });
+
+                if (!response.ok) {
+                    let errorMessage = `Failed to delete document (${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData?.detail) {
+                            errorMessage = errorData.detail;
+                        }
+                    } catch (parseError) {
+                        // Ignore JSON parsing errors for error responses
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                await response.json().catch(() => ({}));
+
+                if (currentDocumentId === documentId) {
+                    currentDocumentId = null;
+                    const statusSection = document.getElementById('statusSection');
+                    const resultsSection = document.getElementById('resultsSection');
+                    if (statusSection) statusSection.style.display = 'none';
+                    if (resultsSection) resultsSection.style.display = 'none';
+                }
+
+                await loadExistingDocuments();
+                alert(`Deleted "${filename || 'document'}". You can now upload it again.`);
+            } catch (error) {
+                showError(`Failed to delete document: ${error.message}`);
+            }
         }
 
         // File input handling
@@ -909,6 +981,7 @@
                 const metadata = document.getElementById('metadata');
                 const extractedContent = data.extracted_content || {};
                 const processingDetails = data.metadata?.processing_details || {};
+                const tokenStats = data.token_stats || {};
 
                 if (metadata) {
                     metadata.innerHTML = `
@@ -935,6 +1008,18 @@
                     <div class="metadata-item">
                         <div class="metadata-label">Pages Processed</div>
                         <div class="metadata-value">${processingDetails.pages_processed || 0}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Document Tokens</div>
+                        <div class="metadata-value">${tokenStats.document_tokens ?? '—'}</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Chunk Tokens</div>
+                        <div class="metadata-value">${tokenStats.chunk_tokens ?? '—'} (${tokenStats.chunk_count || 0} chunks)</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Avg Chunk Tokens</div>
+                        <div class="metadata-value">${tokenStats.average_chunk_tokens ?? '—'}</div>
                     </div>
                 `;
                 }
@@ -1094,20 +1179,25 @@
                 }
 
                 chunksGrid.innerHTML = chunks.map(chunk => {
-                    const isEnriched = chunk.metadata?.enriched || false;
-                    const strategy = chunk.metadata?.chunk_type || 'unknown';
-                    const wordCount = chunk.metadata?.word_count || 0;
+                    const chunkType = (chunk.chunk_type || chunk.metadata?.chunk_type || 'unknown').toString();
+                    const wordCount = chunk.metadata?.word_count || chunk.word_count || 0;
+                    const chunkStrategy = chunk.chunking_strategy || 'n/a';
+                    const isEnriched = Boolean(chunk.enriched_content);
+                    const chunkContent = chunk.content || chunk.original_content || chunk.enriched_content || '';
+                    const tokenCount = chunk.token_count || chunk.metadata?.token_count || 0;
 
                     return `
                         <div class="chunk-card ${isEnriched ? 'chunk-enriched' : ''}">
                             <div class="chunk-header">
                                 <span class="chunk-id">#${chunk.chunk_index}</span>
                                 <div class="chunk-badges">
-                                    <span class="chunk-badge ${strategy.toLowerCase()}">${strategy}</span>
+                                    <span class="chunk-badge ${chunkType.toLowerCase()}">${chunkType}</span>
+                                    <span class="chunk-badge">${chunkStrategy}</span>
                                     <span class="chunk-badge">${wordCount} words</span>
+                                    <span class="chunk-badge">${tokenCount} tokens</span>
                                 </div>
                             </div>
-                            <div class="chunk-content">${chunk.content}</div>
+                            <div class="chunk-content">${chunkContent}</div>
                             ${isEnriched ? '<div class="enrichment-indicator" title="Enriched Content">✨</div>' : ''}
                         </div>
                     `;

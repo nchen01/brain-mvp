@@ -8,7 +8,7 @@ from pathlib import Path
 import uuid
 import hashlib
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Query, Body
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import io
@@ -18,7 +18,13 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from docforge.versioning.versions import VersionManager
-from docforge.versioning.models import DocumentRegistrationRequest, DocumentRegistrationResponse, DocumentVersionModel, VersionBranchRequest
+from docforge.versioning.models import (
+    DocumentRegistrationRequest,
+    DocumentRegistrationResponse,
+    DocumentVersionModel,
+    VersionBranchRequest,
+    DeletionReason
+)
 from core.exceptions import DocumentVersionError, DuplicateDocumentError
 from docforge.preprocessing.processor_factory import ProcessorFactory
 from docforge.postprocessing.router import PostProcessingRouter
@@ -31,6 +37,7 @@ from docforge.postprocessing.chunker import DocumentChunker
 from docforge.postprocessing.schemas import ChunkingStrategy
 from config.config_manager import ConfigManager
 from utils.error_handling import handle_async_errors, ErrorCategory, ErrorSeverity
+from utils.token_counter import get_token_counter
 
 # Import authentication
 from api.routers.auth import get_current_user, get_current_user_optional, UserInfo
@@ -128,6 +135,7 @@ async def get_config_manager() -> ConfigManager:
 
 # Background processing tasks storage (in production, use Redis or similar)
 processing_tasks: Dict[str, Dict[str, Any]] = {}
+token_counter = get_token_counter()
 
 
 @router.get("/", response_model=List[Dict[str, Any]])
@@ -586,6 +594,10 @@ async def get_document_content(
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
         
+        from storage.chunk_storage import ChunkStorage
+        chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
+        chunk_records = chunk_storage.get_chunks_by_document(document_id)
+        
         # Get the source content from chunks
         source_content = ""
         if doc.processing_versions:
@@ -596,14 +608,24 @@ async def get_document_content(
         
         # If still empty, try to get from chunk storage
         if not source_content:
-            from storage.chunk_storage import ChunkStorage
-            chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
-            chunks = chunk_storage.get_chunks_by_document(document_id)
-            if chunks:
+            if chunk_records:
                 # Filter out None values and join
-                valid_chunks = [chunk.get('original_content') for chunk in chunks if chunk.get('original_content')]
+                valid_chunks = [chunk.get('original_content') for chunk in chunk_records if chunk.get('original_content')]
                 if valid_chunks:
                     source_content = "\n\n".join(valid_chunks)
+        
+        # Token statistics
+        document_tokens = token_counter.count(source_content)
+        chunk_token_total = 0
+        chunk_count = len(chunk_records)
+        if chunk_records:
+            for chunk in chunk_records:
+                chunk_token_total += (
+                    chunk.get('token_count')
+                    or chunk.get('metadata', {}).get('token_count')
+                    or token_counter.count(chunk.get('original_content'))
+                )
+        avg_chunk_tokens = int(chunk_token_total / chunk_count) if chunk_count else 0
         
         # Return based on format
         if format == "text":
@@ -629,6 +651,12 @@ async def get_document_content(
                     "text_length": len(source_content),
                     "estimated_words": len(source_content.split()),
                     "estimated_paragraphs": source_content.count("\n\n") + 1
+                },
+                "token_stats": {
+                    "document_tokens": document_tokens,
+                    "chunk_tokens": chunk_token_total,
+                    "average_chunk_tokens": avg_chunk_tokens,
+                    "chunk_count": chunk_count
                 },
                 "metadata": {
                     "processing_details": {
@@ -706,7 +734,7 @@ async def download_document(
 
 class DocumentDeletionRequest(BaseModel):
     """Request model for document deletion."""
-    reason: str = Field(..., description="Reason for deletion")
+    reason: str = Field("user_request", description="Reason for deletion")
     permanent: bool = Field(False, description="Whether to permanently delete (vs soft delete)")
 
 
@@ -729,6 +757,57 @@ class DocumentComparisonResponse(BaseModel):
     differences: Dict[str, Any] = Field(..., description="Detailed differences between versions")
     similarity_score: float = Field(..., description="Similarity score (0-1)")
     comparison_summary: str = Field(..., description="Human-readable comparison summary")
+
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: str,
+    deletion_request: Optional[DocumentDeletionRequest] = Body(default=None),
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional),
+    version_manager: VersionManager = Depends(get_version_manager)
+):
+    """
+    Soft delete a document so it can be re-uploaded later.
+    
+    - **document_id**: Document UUID to delete
+    - **deletion_request**: Optional reason/permanent flag
+    """
+    try:
+        version = await version_manager.get_version(document_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        user_id = getattr(current_user, "user_id", None) or getattr(version, "user_id", "anonymous")
+        deletion_data = deletion_request or DocumentDeletionRequest()
+        reason_value = (deletion_data.reason or "user_request").lower()
+        try:
+            reason_enum = DeletionReason(reason_value)
+        except ValueError:
+            reason_enum = DeletionReason.USER_REQUEST
+        
+        success = await version_manager.soft_delete_version(
+            document_id,
+            reason_enum,
+            user_id,
+            notes=f"Web delete request: {deletion_data.reason}"
+        )
+        
+        if success:
+            return {
+                "message": "Document deleted successfully",
+                "document_id": document_id,
+                "deletion_type": "soft",
+                "reason": reason_enum.value,
+                "deleted_at": datetime.now().isoformat()
+            }
+        
+        raise HTTPException(status_code=500, detail="Failed to delete document")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Deletion failed: {str(e)}")
 
 
 @router.get("/{document_id}/versions/history", response_model=DocumentLineageResponse)
@@ -1202,11 +1281,17 @@ async def process_document_async(
         # Convert content elements to components
         components = []
         for i, element in enumerate(result.output.content_elements):
+            # Component IDs must be globally unique to satisfy the DB constraint, so namespace them
+            original_element_id = getattr(element, "element_id", None) or f"element_{i}"
+            component_id = f"{document_id}_{original_element_id}"
+            component_metadata = dict(element.metadata or {})
+            component_metadata.setdefault("source_element_id", original_element_id)
+            
             components.append(MetaDocumentComponent(
-                component_id=element.element_id,
+                component_id=component_id,
                 component_type=element.content_type,
                 content=element.content,
-                metadata=element.metadata,
+                metadata=component_metadata,
                 order_index=i,
                 confidence_score=element.confidence
             ))
@@ -1316,6 +1401,20 @@ async def process_document_async(
                 },
                 'relationships': chunk.relationships
             }
+            upload_timestamp = version_info.timestamp
+            if hasattr(upload_timestamp, "isoformat"):
+                upload_timestamp = upload_timestamp.isoformat()
+            
+            chunk_dict['metadata'].update({
+                'document_filename': filename,
+                'document_file_size': version_info.file_size,
+                'document_uploaded_at': upload_timestamp,
+                'lineage_uuid': lineage_id,
+                'doc_uuid': document_id,
+                'version_number': version_number,
+                'chunking_strategy': strategy_name.lower(),
+                'processed_at': datetime.utcnow().isoformat()
+            })
             
             if enriched_content:
                 chunk_dict['enriched_content'] = enriched_content

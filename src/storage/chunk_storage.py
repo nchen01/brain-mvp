@@ -10,6 +10,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
+from utils.token_counter import get_token_counter
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +27,7 @@ class ChunkStorage:
         self.db_path = db_path
         self._ensure_database()
         self._init_db()
+        self.token_counter = get_token_counter()
     
     def _ensure_database(self):
         """Ensure database directory exists."""
@@ -101,11 +104,14 @@ class ChunkStorage:
                 chunk_id = f"chunk_{doc_uuid}_{idx}"
                 
                 # Extract content
-                original_content = chunk.get('content', chunk.get('original_content', ''))
+                original_content = chunk.get('content') or chunk.get('original_content') or ''
                 enriched_content = chunk.get('enriched_content')
                 
                 # Prepare metadata
-                chunk_metadata = json.dumps(chunk.get('metadata', {}))
+                metadata = dict(chunk.get('metadata', {}))
+                if 'token_count' not in metadata:
+                    metadata['token_count'] = self.token_counter.count(original_content)
+                chunk_metadata = json.dumps(metadata)
                 enrichment_metadata = json.dumps(chunk.get('enrichment_metadata', {}))
                 chunk_relationships = json.dumps(chunk.get('relationships', {}))
                 
@@ -139,6 +145,47 @@ class ChunkStorage:
         finally:
             conn.close()
     
+    def _row_to_chunk_dict(
+        self,
+        row: sqlite3.Row,
+        include_enriched: bool = True
+    ) -> Dict[str, Any]:
+        """Convert a database row into an API-friendly chunk dictionary."""
+        metadata = json.loads(row['chunk_metadata']) if row['chunk_metadata'] else {}
+        enrichment_metadata = json.loads(row['enrichment_metadata']) if row['enrichment_metadata'] else {}
+        relationships = json.loads(row['chunk_relationships']) if row['chunk_relationships'] else {}
+        chunk_type = metadata.get('chunk_type', 'unknown')
+        token_count = metadata.get('token_count')
+        if token_count is None:
+            token_count = self.token_counter.count(row['original_content'])
+            metadata['token_count'] = token_count
+        
+        chunk = {
+            'chunk_id': row['chunk_id'],
+            'doc_uuid': row['doc_uuid'],
+            'lineage_uuid': row['lineage_uuid'],
+            'version_number': row['version_number'],
+            'chunk_index': row['chunk_index'],
+            'chunking_strategy': row['chunking_strategy'],
+            # Provide both original_content and a content alias for UI/API consumers
+            'original_content': row['original_content'],
+            'content': row['original_content'],
+            'metadata': metadata,
+            'relationships': relationships,
+            'chunk_type': chunk_type,
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+            'token_count': token_count
+        }
+        
+        if include_enriched and row['enriched_content']:
+            chunk['enriched_content'] = row['enriched_content']
+            chunk['content'] = row['enriched_content']
+            if enrichment_metadata:
+                chunk['enrichment_metadata'] = enrichment_metadata
+        
+        return chunk
+    
     def get_chunks_by_document(
         self,
         doc_uuid: str,
@@ -164,29 +211,7 @@ class ChunkStorage:
             """, (doc_uuid,))
             
             rows = cursor.fetchall()
-            
-            chunks = []
-            for row in rows:
-                chunk = {
-                    'chunk_id': row['chunk_id'],
-                    'doc_uuid': row['doc_uuid'],
-                    'lineage_uuid': row['lineage_uuid'],
-                    'version_number': row['version_number'],
-                    'chunk_index': row['chunk_index'],
-                    'chunking_strategy': row['chunking_strategy'],
-                    'original_content': row['original_content'],
-                    'metadata': json.loads(row['chunk_metadata']),
-                    'relationships': json.loads(row['chunk_relationships']),
-                    'created_at': row['created_at'],
-                    'updated_at': row['updated_at']
-                }
-                
-                # Add enriched content if requested and available
-                if include_enriched and row['enriched_content']:
-                    chunk['enriched_content'] = row['enriched_content']
-                    chunk['enrichment_metadata'] = json.loads(row['enrichment_metadata'])
-                
-                chunks.append(chunk)
+            chunks = [self._row_to_chunk_dict(row, include_enriched) for row in rows]
             
             logger.debug(f"Retrieved {len(chunks)} chunks for document {doc_uuid}")
             return chunks
@@ -220,23 +245,7 @@ class ChunkStorage:
             if not row:
                 return None
             
-            chunk = {
-                'chunk_id': row['chunk_id'],
-                'doc_uuid': row['doc_uuid'],
-                'lineage_uuid': row['lineage_uuid'],
-                'version_number': row['version_number'],
-                'chunk_index': row['chunk_index'],
-                'chunking_strategy': row['chunking_strategy'],
-                'original_content': row['original_content'],
-                'enriched_content': row['enriched_content'],
-                'metadata': json.loads(row['chunk_metadata']),
-                'enrichment_metadata': json.loads(row['enrichment_metadata']),
-                'relationships': json.loads(row['chunk_relationships']),
-                'created_at': row['created_at'],
-                'updated_at': row['updated_at']
-            }
-            
-            return chunk
+            return self._row_to_chunk_dict(row, include_enriched=True)
             
         except sqlite3.Error as e:
             logger.error(f"Error retrieving chunk {chunk_id}: {e}")
@@ -295,19 +304,7 @@ class ChunkStorage:
             """, (chunking_strategy,))
             
             rows = cursor.fetchall()
-            
-            chunks = []
-            for row in rows:
-                chunk = {
-                    'chunk_id': row['chunk_id'],
-                    'doc_uuid': row['doc_uuid'],
-                    'chunking_strategy': row['chunking_strategy'],
-                    'chunk_index': row['chunk_index'],
-                    'created_at': row['created_at']
-                }
-                chunks.append(chunk)
-            
-            return chunks
+            return [self._row_to_chunk_dict(row, include_enriched=False) for row in rows]
             
         except sqlite3.Error as e:
             logger.error(f"Error retrieving chunks by strategy: {e}")
