@@ -1,422 +1,139 @@
-# Brain MVP - Document Processing System
+# Brain MVP - Advanced Document Processing & RAG System
 
-A production-ready document processing system that extracts text from PDF documents using advanced multi-library processing. Features both a modern web interface and comprehensive REST API for seamless document processing and content retrieval.
+A production-ready document processing system that extracts text from PDF documents using advanced multi-library processing and prepares it for high-precision RAG (Retrieval-Augmented Generation).
 
-## Features
+## 🚀 Key Features
 
-- **Web Interface**: Modern drag-and-drop interface for easy document upload and processing
-- **Advanced PDF Processing**: Multi-library approach using PyMuPDF, pdfplumber, and pdfminer with automatic fallbacks
-- **Real-time Status Monitoring**: Live progress tracking with visual feedback
-- **Multiple Output Formats**: Text, JSON, and Markdown export options
-- **Robust Error Handling**: Graceful fallbacks and comprehensive error recovery
-- **Document Versioning**: Complete document lineage and version tracking
-- **RESTful API**: Full API access for programmatic integration
-- **Production Ready**: Docker containerization with all dependencies included
+- **Modern Web Interface**: Premium drag-and-drop interface for document management, real-time status monitoring, and chunking visualization.
+- **Advanced PDF Processing**: Multi-library approach using **PyMuPDF**, **pdfplumber**, and **pdfminer** with automatic fallbacks for maximum extraction reliability.
+- **High-Precision RAG Pipeline**:
+  - **Multiple Chunking Strategies**: Recursive, Fixed-size, and Semantic chunking.
+  - **Context Enrichment**: Anthropic-style context-enriched chunking for improved retrieval accuracy.
+- **Individual Document Management**: Support for individual document deletion with full cleanup of associated chunks and metadata.
+- **Robust Storage Architecture**: Multi-tier storage system supporting both SQLite (development) and PostgreSQL (production).
+- **Production Ready**: Fully containerized with Docker, including PostgreSQL and Redis for caching and background tasks.
 
-## Quick Start
+---
 
-### Prerequisites
-
-- Docker and Docker Compose
-- Web browser (for web interface)
-- curl or similar tool (for API testing)
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/nchen01/brain-mvp.git
-cd brain-mvp
-```
-
-2. Start the system:
-```bash
-docker-compose up -d
-```
-
-3. Access the system:
-```bash
-# Web Interface (Recommended)
-open http://localhost:8080
-
-# API Health Check
-curl http://localhost:8080/health
-# Should return: {"status": "healthy", "version": "1.0.0"}
-```
-
-### Using the Web Interface (Easiest Method)
-
-1. **Open your browser**: Navigate to `http://localhost:8080`
-2. **Upload PDF**: Drag and drop a PDF file or click "Choose PDF File"
-3. **Process**: Click "Process Document" and watch real-time progress
-4. **Download Results**: Get extracted content in Text, JSON, or Markdown format
-
-### Using the API (Advanced Users)
-
-#### Upload a Document
-
-```bash
-# Upload a PDF file
-curl -X POST "http://localhost:8080/api/v1/documents/upload" \
-  -F "file=@your_document.pdf"
-
-# Response includes document_id for tracking
-```
-
-#### Check Processing Status
-
-```bash
-# Replace {document_id} with the ID from upload response
-curl "http://localhost:8080/api/v1/documents/{document_id}/status"
-```
-
-#### Get Extracted Content
-
-```bash
-# Get simple text format
-curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=text"
-
-# Get detailed JSON with metadata
-curl "http://localhost:8080/api/v1/documents/{document_id}/content?format=json"
-```
-
-### Testing the System
-
-Run the comprehensive end-to-end test:
-
-```bash
-# Inside Docker container
-docker-compose exec brain-mvp python final_e2e_test.py
-
-# Or test web interface functionality
-docker-compose exec brain-mvp python -c "
-import requests
-response = requests.get('http://localhost:8080/health')
-print('System Status:', response.json())
-"
-```
-
-## Safety and Security
-
-### Strict Approval Commands
-
-To prevent accidental data loss or destructive operations, certain commands require **explicit user approval** before execution. These commands are documented in [`STRICT_APPROVAL_COMMANDS.md`](STRICT_APPROVAL_COMMANDS.md) and include:
-
-- **File/Directory Deletion**: `rm`, `rmdir`, `unlink`
-- **Disk Operations**: `dd`, `mkfs`, `fdisk` (can overwrite entire disks)
-- **Permission Changes**: `chmod`, `chown`, `chgrp`
-- **Process Termination**: `kill`, `pkill`, `killall`
-- **System Control**: `shutdown`, `reboot`, `halt`, `init`
-- **Privilege Escalation**: `sudo`
-
-> [!CAUTION]
-> These commands will **never** be auto-executed by automated processes. Manual review and approval is always required to prevent accidental system damage or data loss.
-
-For the complete list with descriptions, see [`STRICT_APPROVAL_COMMANDS.md`](STRICT_APPROVAL_COMMANDS.md).
-
-## Architecture
-
-### System Components
-
-- **Web Interface** (`web_interface.html`): Modern single-page application for document processing
-- **FastAPI Application** (`src/api/`): RESTful API server with comprehensive endpoints
-- **Advanced PDF Processor** (`src/docforge/preprocessing/`): Multi-library PDF processing engine
-- **Database Layer** (`init_tables.sql`): SQLite database with comprehensive schema
-- **Docker Environment**: Containerized deployment with PostgreSQL and Redis support
+## 🛠 Architecture Overview
 
 ### Processing Pipeline
+1. **Upload**: Document received via Web UI or REST API.
+2. **Extraction**: `AdvancedPDFProcessor` extracts text and metadata using the best available library.
+3. **Chunking**: Documents are split into chunks using configurable strategies (Recursive, Semantic, etc.).
+4. **Enrichment**: Chunks are optionally enriched with document-level context using LLMs.
+5. **Storage**: Content is stored across specialized databases (Raw, Post, Meta, and Chunks).
 
-1. **Upload**: Document uploaded via web interface or API
-2. **Registration**: Document registered with unique UUIDs and metadata
-3. **Processing**: Advanced PDF processor extracts text using multiple libraries:
-   - **PyMuPDF** (Primary): Fast and accurate text extraction
-   - **pdfplumber** (Fallback): Complex layouts and table extraction
-   - **pdfminer** (Final fallback): Difficult or corrupted PDFs
-4. **Storage**: Extracted content stored in database with full metadata
-5. **Retrieval**: Content available via API in multiple formats
+### Database Schema
+The system uses a comprehensive schema to track document lineage and processing history:
+- `document_lineage`: Tracks document versions and history.
+- `raw_document_register`: Stores original file information and status.
+- `document_chunks`: Stores processed chunks with strategy metadata and enrichment content.
+- `meta_document_register`: Stores structural metadata and processing status.
 
-### Supported File Types
+---
 
-| Type | Extensions | Processor | Status | Features |
-|------|------------|-----------|---------|----------|
-| PDF Files | .pdf | AdvancedPDFProcessor | Production Ready | Multi-library processing, table extraction, metadata |
-| Text Files | .txt, .md, .rst | TextDocumentProcessor | Available | Basic text processing |
+## ⚡ Quick Start
 
-### PDF Processing Capabilities
+### Prerequisites
+- Docker and Docker Compose
+- OpenAI API Key (optional, for semantic chunking and context enrichment)
 
-- **Text Extraction**: Full document text with page breaks
-- **Table Detection**: Automatic table identification and extraction
-- **Metadata Extraction**: Document properties, page count, processing statistics
-- **Multi-page Support**: Handles documents of any size
-- **Error Recovery**: Graceful fallbacks between processing libraries
-- **Performance Tracking**: Processing time and library usage statistics
+### Installation & Setup
 
-## API Documentation
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/nchen01/brain-mvp.git
+   cd brain-mvp
+   ```
 
-### Interactive Documentation
+2. **Configure Environment**:
+   Create a `.env` file or set environment variables:
+   ```bash
+   OPENAI_API_KEY=your_api_key_here
+   PROCESSING__DEFAULT_CHUNKING_STRATEGY=recursive
+   ```
 
-- **Web Interface**: http://localhost:8080 (Primary user interface)
-- **Swagger UI**: http://localhost:8080/docs (API documentation)
-- **System Health**: http://localhost:8080/health (Status monitoring)
+3. **Start the System**:
+   ```bash
+   docker-compose up -d
+   ```
 
-### Core API Endpoints
+4. **Access the Interface**:
+   - **Web UI**: [http://localhost:8080](http://localhost:8080)
+   - **API Docs (Swagger)**: [http://localhost:8080/docs](http://localhost:8080/docs)
 
-- `POST /api/v1/documents/upload` - Upload PDF documents
-- `GET /api/v1/documents/{id}/status` - Real-time processing status
-- `GET /api/v1/documents/{id}/content` - Extract processed content
-  - `?format=text` - Plain text output
-  - `?format=json` - Detailed JSON with metadata
-  - `?format=markdown` - Markdown formatted output
-- `GET /health` - System health and version information
+---
 
-### Response Formats
+## 🧠 Advanced RAG Capabilities
 
-#### Status Response
-```json
-{
-  "document_id": "abc123-def456-ghi789",
-  "status": "completed",
-  "progress": 100.0,
-  "started_at": "2025-10-29T07:00:00Z",
-  "completed_at": "2025-10-29T07:00:05Z"
-}
-```
+### Chunking Strategies
+The system supports three primary chunking strategies to optimize for different RAG use cases:
+- **Recursive Character**: Splits text based on character hierarchy (paragraphs, sentences, words).
+- **Fixed Size**: Simple fixed-token windows with configurable overlap.
+- **Semantic**: Uses embeddings to find natural semantic boundaries in the text.
 
-#### Content Response (JSON Format)
-```json
-{
-  "document_id": "abc123-def456-ghi789",
-  "filename": "document.pdf",
-  "extracted_content": {
-    "raw_text": "Full document text...",
-    "text_length": 1234,
-    "estimated_words": 200,
-    "estimated_paragraphs": 15
-  },
-  "metadata": {
-    "processing_details": {
-      "libraries_used": ["PyMuPDF"],
-      "pages_processed": 5,
-      "tables_detected": 2,
-      "processing_time": 1.23
-    }
-  }
-}
-```
+### Context Enrichment
+Inspired by Anthropic's "Contextual Retrieval", the system can enrich each chunk with document-level context. This significantly improves retrieval accuracy by providing the LLM with the necessary background for each individual chunk.
 
-## Processing Metrics
+---
 
-The system provides comprehensive processing statistics:
+## 🐳 Docker Orchestration
 
-- **Processing Time**: Actual time taken for document processing
-- **Libraries Used**: Which PDF processing library was successful
-- **Pages Processed**: Total number of pages in the document
-- **Tables Detected**: Number of tables found and extracted
-- **Text Length**: Character count of extracted content
-- **Word Count**: Estimated number of words extracted
-- **File Size**: Original document size and processing efficiency
+The system is composed of three main services:
 
-## Project Structure
+| Service | Container Name | Port | Description |
+|---------|----------------|------|-------------|
+| **App** | `brain-mvp-app` | 8080 | FastAPI application & PDF processing engine |
+| **Postgres** | `brain-mvp-postgres` | 5433 | Primary database for document metadata & chunks |
+| **Redis** | `brain-mvp-redis` | 6380 | Cache for background tasks and session management |
 
-```
-brain_mvp/
-├── web_interface.html                    # Modern web interface
-├── src/
-│   ├── api/                             # FastAPI REST API
-│   │   ├── app.py                       # Main application
-│   │   └── routers/documents.py         # Document endpoints
-│   ├── docforge/preprocessing/          # PDF processing engine
-│   │   ├── advanced_pdf_processor.py    # Multi-library PDF processor
-│   │   ├── processor_factory.py         # Processor management
-│   │   └── schemas.py                   # Data models
-│   └── dbm/                            # Database operations
-├── init_tables.sql                      # Database schema
-├── docker-compose.yml                   # Container orchestration
-├── PROJECT_EXPLANATION.md               # Complete technical documentation
-├── USAGE_GUIDE.md                      # User and developer guide
-└── END_TO_END_TEST_RESULTS.md          # Testing validation
-```
-
-### Development and Testing
-
+### Useful Commands
 ```bash
-# Run comprehensive end-to-end tests
-docker-compose exec brain-mvp python final_e2e_test.py
-
-# Test PDF processing directly
-docker-compose exec brain-mvp python -c "
-from src.docforge.preprocessing.advanced_pdf_processor import AdvancedPDFProcessor
-processor = AdvancedPDFProcessor()
-print(f'PDF libraries available: {processor.libraries_available}')
-"
-
-# Monitor application logs
-docker-compose logs -f brain-mvp
-```
-
-### Configuration
-
-Current system configuration:
-
-- **Database**: SQLite (development) with PostgreSQL support
-- **Web Server**: FastAPI on port 8000
-- **PDF Processing**: PyMuPDF, pdfplumber, pdfminer libraries
-- **Storage**: Local filesystem with database content storage
-- **Containerization**: Docker with multi-service orchestration
-
-## Deployment
-
-### Docker Deployment (Recommended)
-
-The system is fully containerized and production-ready:
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-
 # View logs
-docker-compose logs brain-mvp
-```
-
-### Services
-
-- **brain-mvp**: Main application (FastAPI + PDF processing)
-- **postgres**: PostgreSQL database (port 5432)
-- **redis**: Redis cache for background tasks (port 6379)
-
-### Environment Configuration
-
-The system works out-of-the-box with sensible defaults. For production:
-
-- **Database**: Configure PostgreSQL connection in docker-compose.yml
-- **Storage**: Persistent volumes for data and uploads
-- **Scaling**: Add load balancer for multiple application instances
-- **Security**: Add authentication and HTTPS termination
-
-## Monitoring and Troubleshooting
-
-### Health Monitoring
-
-```bash
-# System health check
-curl http://localhost:8080/health
-
-# Web interface accessibility
-curl -I http://localhost:8080
-
-# Database connectivity
-docker-compose exec postgres psql -U brain_user -d brain_mvp -c "SELECT 1;"
-```
-
-### Logs and Debugging
-
-```bash
-# Application logs
-docker-compose logs brain-mvp
-
-# Real-time log monitoring
 docker-compose logs -f brain-mvp
 
-# Check PDF processing logs
-docker-compose logs brain-mvp | grep -i "pdf\|processing\|extract"
+# Restart the application
+docker-compose restart brain-mvp
+
+# Run end-to-end tests
+docker-compose exec brain-mvp python final_e2e_test.py
 ```
 
-### Common Issues and Solutions
+---
 
-1. **Web Interface Not Loading**
-   ```bash
-   # Check if containers are running
-   docker-compose ps
-   
-   # Restart if needed
-   docker-compose restart brain-mvp
-   ```
+## 📡 API Documentation
 
-2. **PDF Processing Fails**
-   ```bash
-   # Check PDF processing libraries
-   docker-compose exec brain-mvp python -c "
-   import fitz, pdfplumber
-   print('PDF libraries loaded successfully')
-   "
-   ```
+### Core Endpoints
 
-3. **Upload Errors**
-   - Ensure PDF file is not corrupted
-   - Check file size (recommended under 10MB)
-   - Verify file is actually a PDF format
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/documents/upload` | Upload and process a new PDF |
+| `GET` | `/api/v1/documents/` | List all uploaded documents |
+| `GET` | `/api/v1/documents/{id}/status` | Check processing progress |
+| `GET` | `/api/v1/documents/{id}/content` | Retrieve extracted text/JSON/Markdown |
+| `DELETE` | `/api/v1/documents/{id}` | Permanently delete a document and its chunks |
+| `GET` | `/chunks/document/{id}` | Retrieve all chunks for a document |
 
-4. **JavaScript Errors in Browser**
-   - Clear browser cache and reload
-   - Check browser console for specific errors
-   - Ensure JavaScript is enabled
+---
 
-### System Reset
+## 🛡 Safety and Security
 
-```bash
-# Complete system reset
-docker-compose down
-docker-compose up -d
+### Strict Approval Commands
+To prevent accidental data loss, certain operations require explicit user approval. See [`STRICT_APPROVAL_COMMANDS.md`](STRICT_APPROVAL_COMMANDS.md) for details.
 
-# Check system status
-curl http://localhost:8080/health
-```
+### Data Privacy
+- Support for encrypted storage of document content.
+- Local processing of PDF documents (no external PDF APIs used).
+- Configurable data retention policies.
 
-## Documentation
+---
 
-### Complete Documentation
-
-- **PROJECT_EXPLANATION.md**: Complete technical overview and data flow
-- **USAGE_GUIDE.md**: Comprehensive user and developer guide
-- **END_TO_END_TEST_RESULTS.md**: Testing validation and results
-- **API Documentation**: http://localhost:8080/docs (when running)
-
-### Key Features Demonstrated
-
-- Modern web interface with drag-and-drop functionality
-- Advanced PDF processing with multiple library fallbacks
-- Real-time status monitoring and progress tracking
-- Multiple output formats with comprehensive metadata
-- Production-ready Docker deployment
-- Complete database schema and data management
-
-## Performance
-
-### Typical Processing Times
-
-- **Simple PDFs**: 1-3 seconds
-- **Complex PDFs**: 3-10 seconds
-- **Large Documents**: Scales with document size and complexity
-
-### Supported Scale
-
-- **File Size**: Tested up to 50MB PDFs
-- **Concurrent Processing**: Multiple simultaneous uploads
-- **Storage**: SQLite for development, PostgreSQL for production
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (no emojis in commit messages)
-3. Follow the existing code style and documentation standards
-4. Add tests for new functionality
-5. Submit a pull request with clear description
-
-## License
-
+## 📄 License
 This project is licensed under the MIT License.
 
-## Support
-
-The Brain MVP is a complete, working document processing system. For support:
-
-1. **Check Documentation**: Review PROJECT_EXPLANATION.md and USAGE_GUIDE.md
-2. **Run Tests**: Execute final_e2e_test.py to verify functionality
-3. **Check Logs**: Use docker-compose logs for debugging
-4. **Web Interface**: Use http://localhost:8080 for easy document processing
-5. **API Access**: Use http://localhost:8080/docs for programmatic integration
-
-The system is production-ready and provides comprehensive PDF processing capabilities with both user-friendly web interface and developer-friendly API access.
+## 🤝 Support
+For technical support or feature requests, please check the following:
+1. **Technical Overview**: [`PROJECT_EXPLANATION.md`](PROJECT_EXPLANATION.md)
+2. **User Guide**: [`USAGE_GUIDE.md`](USAGE_GUIDE.md)
+3. **Test Results**: [`END_TO_END_TEST_RESULTS.md`](END_TO_END_TEST_RESULTS.md)
