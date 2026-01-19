@@ -2,24 +2,26 @@
 
 A production-ready document processing system that extracts text from PDF documents using advanced multi-library processing and prepares it for high-precision RAG (Retrieval-Augmented Generation).
 
-## 🚀 Key Features
+## Key Features
 
 - **Modern Web Interface**: Premium drag-and-drop interface for document management, real-time status monitoring, and chunking visualization.
-- **Advanced PDF Processing**: Multi-library approach using **PyMuPDF**, **pdfplumber**, and **pdfminer** with automatic fallbacks for maximum extraction reliability.
+- **Advanced PDF Processing**: Multi-library approach with **MinerU API** (primary) and fallback to **PyMuPDF**, **pdfplumber**, and **pdfminer** for maximum extraction reliability.
+- **MinerU Integration**: High-quality PDF parsing with layout detection (DocLayout-YOLO), OCR support (109 languages via PaddleOCR), table structure recognition, and formula recognition (UniMERNet).
 - **High-Precision RAG Pipeline**:
   - **Multiple Chunking Strategies**: Recursive, Fixed-size, and Semantic chunking.
   - **Context Enrichment**: Anthropic-style context-enriched chunking for improved retrieval accuracy.
 - **Individual Document Management**: Support for individual document deletion with full cleanup of associated chunks and metadata.
 - **Robust Storage Architecture**: Multi-tier storage system supporting both SQLite (development) and PostgreSQL (production).
 - **Production Ready**: Fully containerized with Docker, including PostgreSQL and Redis for caching and background tasks.
+- **Multiple Deployment Profiles**: CPU, GPU (NVIDIA), and Mac Model Runner profiles for flexible deployment.
 
 ---
 
-## 🛠 Architecture Overview
+## Architecture Overview
 
 ### Processing Pipeline
 1. **Upload**: Document received via Web UI or REST API.
-2. **Extraction**: `AdvancedPDFProcessor` extracts text and metadata using the best available library.
+2. **Extraction**: `MinerUProcessor` (primary) or `AdvancedPDFProcessor` (fallback) extracts text, tables, and images using the best available backend.
 3. **Chunking**: Documents are split into chunks using configurable strategies (Recursive, Semantic, etc.).
 4. **Enrichment**: Chunks are optionally enriched with document-level context using LLMs.
 5. **Storage**: Content is stored across specialized databases (Raw, Post, Meta, and Chunks).
@@ -78,9 +80,11 @@ Inspired by Anthropic's "Contextual Retrieval", the system can enrich each chunk
 
 ---
 
-## 🐳 Docker Orchestration
+## Docker Orchestration
 
-The system is composed of three main services:
+The system is composed of multiple services with different deployment profiles:
+
+### Core Services
 
 | Service | Container Name | Port | Description |
 |---------|----------------|------|-------------|
@@ -88,17 +92,31 @@ The system is composed of three main services:
 | **Postgres** | `brain-mvp-postgres` | 5433 | Primary database for document metadata & chunks |
 | **Redis** | `brain-mvp-redis` | 6380 | Cache for background tasks and session management |
 
+### MinerU Profiles
+
+| Profile | Command | Description |
+|---------|---------|-------------|
+| **Default** | `docker compose up -d` | Core services only (uses fallback PDF processor) |
+| **CPU** | `docker compose --profile cpu up -d` | MinerU with CPU-based pipeline backend |
+| **GPU** | `docker compose --profile gpu up -d` | MinerU with NVIDIA GPU acceleration (vLLM) |
+| **Mac Model Runner** | `docker compose --profile mac-modelrunner up -d` | MinerU with Docker Model Runner VLM backend |
+
 ### Useful Commands
 ```bash
 # View logs
-docker-compose logs -f brain-mvp
+docker compose logs -f brain-mvp
 
 # Restart the application
-docker-compose restart brain-mvp
+docker compose restart brain-mvp
 
 # Run end-to-end tests
-docker-compose exec brain-mvp python tests/final_e2e_test.py
+docker compose exec brain-mvp python tests/final_e2e_test.py
+
+# Start with MinerU CPU profile
+docker compose --profile cpu up -d
 ```
+
+**Note for Mac Users**: See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for important information about Docker Model Runner limitations on macOS.
 
 ---
 
@@ -132,8 +150,10 @@ To prevent accidental data loss, certain operations require explicit user approv
 ## 📄 License
 This project is licensed under the MIT License.
 
-## 🤝 Support
+## Support
 For technical support or feature requests, please check the following:
 1. **Technical Overview**: [`PROJECT_EXPLANATION.md`](PROJECT_EXPLANATION.md)
 2. **User Guide**: [`USAGE_GUIDE.md`](USAGE_GUIDE.md)
-3. **Test Results**: [`END_TO_END_TEST_RESULTS.md`](tests/results/END_TO_END_TEST_RESULTS.md)
+3. **Known Issues**: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) - Mac Docker Runner issues and workarounds
+4. **Installation Guide**: [`INSTALLATION.md`](INSTALLATION.md)
+5. **Test Results**: [`END_TO_END_TEST_RESULTS.md`](tests/results/END_TO_END_TEST_RESULTS.md)

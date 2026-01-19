@@ -1,8 +1,107 @@
 # Brain MVP - Installation Guide
 
-## Quick Start (Minimal Setup)
+## Quick Start (Docker - Recommended)
 
-This guide will get you up and running with the Brain MVP in under 10 minutes with basic functionality.
+The fastest way to get started is using Docker:
+
+```bash
+# Clone the repository
+git clone https://github.com/nchen01/brain-mvp.git
+cd brain-mvp
+
+# Start core services
+docker compose up -d
+
+# Access the application
+open http://localhost:8080
+```
+
+### Docker Profiles
+
+| Profile | Command | Best For |
+|---------|---------|----------|
+| Default | `docker compose up -d` | Quick start, basic PDF processing |
+| CPU | `docker compose --profile cpu up -d` | MinerU with CPU (slower but accurate) |
+| GPU | `docker compose --profile gpu up -d` | NVIDIA GPU systems |
+
+---
+
+## Mac-Specific Setup (Apple Silicon)
+
+### Option 1: Basic Setup (Fallback Processors)
+
+For basic PDF processing without MinerU's advanced features:
+
+```bash
+docker compose up -d
+```
+
+This uses PyMuPDF, pdfplumber, and pdfminer as fallback processors.
+
+### Option 2: MinerU with CPU Backend
+
+For better PDF processing using MinerU's pipeline backend:
+
+```bash
+docker compose --profile cpu up -d
+```
+
+### Option 3: MinerU with Vision Model (Best Quality)
+
+For the highest quality PDF processing with vision-language model support, you need to run a llama.cpp server with a vision model. Docker Desktop's Model Runner does not support mmproj files required for vision.
+
+#### Step 1: Install llama.cpp
+
+```bash
+# Using Homebrew
+brew install llama.cpp
+
+# Or build from source with Metal support
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+make LLAMA_METAL=1 -j
+```
+
+#### Step 2: Download Vision Model + mmproj
+
+```bash
+mkdir -p ~/models
+
+# Download LLaVA 1.6 (recommended)
+wget -P ~/models https://huggingface.co/cjpais/llava-1.6-mistral-7b-gguf/resolve/main/llava-v1.6-mistral-7b.Q4_K_M.gguf
+wget -P ~/models https://huggingface.co/cjpais/llava-1.6-mistral-7b-gguf/resolve/main/mmproj-model-f16.gguf
+```
+
+#### Step 3: Start llama.cpp Server
+
+```bash
+llama-server \
+  --model ~/models/llava-v1.6-mistral-7b.Q4_K_M.gguf \
+  --mmproj ~/models/mmproj-model-f16.gguf \
+  --host 0.0.0.0 \
+  --port 8001 \
+  --ctx-size 4096 \
+  --n-gpu-layers 99
+```
+
+#### Step 4: Configure and Start Brain MVP
+
+```bash
+# Set environment variables
+export MINERU_BACKEND=vlm-http-client
+export MINERU_SERVER_URL=http://host.docker.internal:8001
+
+# Start with MinerU
+docker compose --profile cpu up -d
+```
+
+See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for more details on Mac Docker Model Runner limitations.
+
+---
+
+## Local Development Setup (Without Docker)
+
+This guide will get you up and running with the Brain MVP with basic functionality.
 
 ### Prerequisites
 
