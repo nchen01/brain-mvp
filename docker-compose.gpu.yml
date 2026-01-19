@@ -1,0 +1,21 @@
+# GPU Override Configuration for Brain MVP
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d
+#
+# This override file configures the brain-mvp app to work with MinerU's GPU backend (vLLM).
+# Requires: NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper)
+
+services:
+  brain-mvp:
+    environment:
+      # Override MinerU settings for GPU backend
+      # Let MinerU GPU service handle the backend selection (vlm-vllm-engine)
+      - MINERU_BACKEND=vlm-vllm-engine
+      # Remove the Model Runner URL - not needed for GPU
+      - MINERU_SERVER_URL=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mineru-api-gpu:
+        condition: service_started

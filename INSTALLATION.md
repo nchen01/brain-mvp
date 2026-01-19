@@ -22,7 +22,7 @@ open http://localhost:8080
 |---------|---------|----------|
 | Default | `docker compose up -d` | Quick start, basic PDF processing |
 | CPU | `docker compose --profile cpu up -d` | MinerU with CPU (slower but accurate) |
-| GPU | `docker compose --profile gpu up -d` | NVIDIA GPU systems |
+| GPU | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | NVIDIA GPU systems |
 
 ---
 

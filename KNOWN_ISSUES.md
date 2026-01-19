@@ -196,8 +196,14 @@ Supported services:
 If you have access to an NVIDIA GPU, use the GPU profile for best performance:
 
 ```bash
-docker compose --profile gpu up -d
+# Use both compose files to properly configure GPU backend
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d
 ```
+
+The `docker-compose.gpu.yml` override file:
+- Sets `MINERU_BACKEND=vlm-vllm-engine` for the brain-mvp app
+- Removes the Model Runner URL configuration
+- Adds proper dependency on the GPU MinerU service
 
 This requires:
 - NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper)

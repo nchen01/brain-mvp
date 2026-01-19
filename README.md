@@ -98,7 +98,7 @@ The system is composed of multiple services with different deployment profiles:
 |---------|---------|-------------|
 | **Default** | `docker compose up -d` | Core services only (uses fallback PDF processor) |
 | **CPU** | `docker compose --profile cpu up -d` | MinerU with CPU-based pipeline backend |
-| **GPU** | `docker compose --profile gpu up -d` | MinerU with NVIDIA GPU acceleration (vLLM) |
+| **GPU** | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU acceleration (vLLM) |
 | **Mac Model Runner** | `docker compose --profile mac-modelrunner up -d` | MinerU with Docker Model Runner VLM backend |
 
 ### Useful Commands

@@ -138,7 +138,7 @@ The system is fully containerized for "one-command" deployment with multiple pro
 |---------|---------|----------|
 | Default | `docker compose up -d` | Core services only, uses fallback PDF processors |
 | CPU | `docker compose --profile cpu up -d` | MinerU with CPU pipeline backend |
-| GPU | `docker compose --profile gpu up -d` | MinerU with NVIDIA GPU + vLLM |
+| GPU | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU + vLLM |
 | Mac Model Runner | `docker compose --profile mac-modelrunner up -d` | MinerU with Docker Model Runner |
 
 ### Environment Configuration
