@@ -1,0 +1,42 @@
+# MinerU CPU-only Docker Image
+# Compatible with Mac (Apple Silicon/Intel) and any x86 machine without GPU
+# Uses the "pipeline" backend for CPU-based processing
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    fonts-noto-core \
+    fonts-noto-cjk \
+    fontconfig \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    curl \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for faster pip operations
+RUN pip install --upgrade pip uv
+
+# Install MinerU with core dependencies (no CUDA)
+RUN uv pip install --system -U 'mineru[core]' && \
+    pip cache purge
+
+# Download MinerU models (pipeline models only - smaller download)
+RUN mineru-models-download -s huggingface -m pipeline
+
+# Create working directories
+RUN mkdir -p /pdfs /output
+
+# Set environment variables
+ENV MINERU_MODEL_SOURCE=local
+ENV MINERU_BACKEND=pipeline
+
+# Expose API port
+EXPOSE 8080
+
+# Default command - run the API server (backend specified per-request)
+CMD ["mineru-api", "--host", "0.0.0.0", "--port", "8080"]

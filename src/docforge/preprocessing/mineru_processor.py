@@ -1,11 +1,20 @@
-"""MinerU PDF processor for extracting text, images, and tables from PDFs."""
+"""MinerU PDF processor for extracting text, images, and tables from PDFs.
+
+This processor calls the MinerU API service for high-quality PDF parsing
+with layout detection, OCR support, and table extraction.
+
+MinerU API: https://github.com/opendatalab/MinerU
+"""
 
 import logging
-import json
-import tempfile
 import os
+import time
+import httpx
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+import uuid
+import json
+import base64
 
 from .base_processor import BaseDocumentProcessor
 from .schemas import (
@@ -22,75 +31,169 @@ from .schemas import (
     create_table_data,
     create_image_data
 )
-from .output_validator import validate_and_standardize_output
 
 logger = logging.getLogger(__name__)
 
 
 class MinerUProcessor(BaseDocumentProcessor):
-    """MinerU-based PDF processor."""
-    
+    """
+    MinerU API-based PDF processor for high-quality document extraction.
+
+    Features:
+    - Layout detection using DocLayout-YOLO
+    - OCR support via PaddleOCR (109 languages)
+    - Table structure recognition
+    - Image extraction
+    - Formula recognition (UniMERNet)
+    - GPU acceleration via VLM-VLLM backend
+
+    Falls back to AdvancedPDFProcessor if MinerU API is not available.
+    """
+
     def __init__(self, config: Dict[str, Any] = None):
         """Initialize the MinerU processor."""
         super().__init__(config)
         self.processor_name = "MinerUProcessor"
-        self.processor_version = "1.0.0"
-        
-        # Configuration options
+        self.processor_version = "2.1.0"  # API version
+
+        # API configuration
+        self.api_url = self.config.get(
+            "api_url",
+            os.environ.get("MINERU_API_URL", "http://mineru-api:8080")
+        )
+        self.api_enabled = self.config.get(
+            "api_enabled",
+            os.environ.get("MINERU_API_ENABLED", "true").lower() == "true"
+        )
+        self.api_timeout = self.config.get("api_timeout", 300)  # 5 minutes default
+
+        # Processing options
         self.extract_images = self.config.get("extract_images", True)
         self.extract_tables = self.config.get("extract_tables", True)
         self.ocr_enabled = self.config.get("ocr_enabled", True)
         self.language = self.config.get("language", "auto")
-        self.output_dir = self.config.get("output_dir", "./temp/mineru_output")
-        
+        self.output_dir = self.config.get("output_dir", "./data/mineru_output")
+
+        # Backend configuration (pipeline, vlm-http-client, vlm-vllm-engine, etc.)
+        self.backend = self.config.get(
+            "backend",
+            os.environ.get("MINERU_BACKEND", "pipeline")
+        )
+
+        # VLM server URL (for vlm-http-client and hybrid-http-client backends)
+        # Use MINERU_SERVER_URL without path suffixes - MinerU handles the paths
+        self.vlm_http_url = self.config.get(
+            "vlm_http_url",
+            os.environ.get("MINERU_SERVER_URL", os.environ.get("VLM_HTTP_BASE_URL", ""))
+        )
+
         # Ensure output directory exists
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-    
+
+        # Initialize fallback processor lazily
+        self._fallback_processor = None
+        self._api_available = None  # Cache API availability check
+
+        logger.info(f"MinerU processor initialized - API URL: {self.api_url}, Backend: {self.backend}")
+
+    @property
+    def fallback_processor(self):
+        """Lazy-load the fallback processor."""
+        if self._fallback_processor is None:
+            from .advanced_pdf_processor import AdvancedPDFProcessor
+            self._fallback_processor = AdvancedPDFProcessor(self.config)
+            logger.info("Fallback processor (AdvancedPDFProcessor) initialized")
+        return self._fallback_processor
+
+    def is_available(self) -> bool:
+        """Check if MinerU API is available."""
+        if not self.api_enabled:
+            return False
+
+        # Use cached result if available
+        if self._api_available is not None:
+            return self._api_available
+
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                # MinerU API doesn't have /health, check /openapi.json instead
+                response = client.get(f"{self.api_url}/openapi.json")
+                self._api_available = response.status_code == 200
+                if self._api_available:
+                    logger.info("MinerU API is available")
+                else:
+                    logger.warning(f"MinerU API returned status {response.status_code}")
+        except Exception as e:
+            logger.warning(f"MinerU API not available: {e}")
+            self._api_available = False
+
+        return self._api_available
+
     def get_supported_formats(self) -> List[str]:
         """Get supported PDF formats."""
         return ['.pdf']
-    
+
     def _process_document(
         self,
         file_path: str,
         file_content: bytes,
         **kwargs
     ) -> StandardizedDocumentOutput:
-        """Process a PDF document using MinerU."""
+        """Process a PDF document using MinerU API."""
+        start_time = time.time()
+
         try:
             logger.info(f"Processing PDF with MinerU: {file_path}")
-            
+
             # Extract metadata
             file_metadata = self._extract_metadata_from_path(file_path)
-            
-            # Process with MinerU (falls back to mock if MinerU not available)
-            mineru_result = self._process_with_mineru(file_path, file_content)
-            
+
+            # Check API availability and process
+            logger.info(f"MinerU API enabled: {self.api_enabled}, checking availability...")
+            api_available = self.is_available()
+            logger.info(f"MinerU API available: {api_available}")
+
+            if self.api_enabled and api_available:
+                try:
+                    logger.info("Using MinerU API for processing")
+                    mineru_result = self._process_with_api(file_path, file_content)
+                    logger.info("MinerU API processing successful")
+                except Exception as api_error:
+                    logger.error(f"MinerU API error: {api_error}")
+                    logger.info("Falling back to AdvancedPDFProcessor")
+                    return self.fallback_processor._process_document(file_path, file_content, **kwargs)
+            else:
+                logger.info("MinerU API not available, using fallback processor")
+                return self.fallback_processor._process_document(file_path, file_content, **kwargs)
+
             # Convert MinerU output to standardized format
             content_elements = self._convert_to_content_elements(mineru_result)
             tables = self._extract_tables_from_result(mineru_result)
             images = self._extract_images_from_result(mineru_result)
-            
+
+            processing_time = time.time() - start_time
+
             # Create processing metadata
             processing_metadata = create_processing_metadata(
                 processor_name=self.processor_name,
                 processor_version=self.processor_version,
-                processing_duration=0.0,  # Will be set by base class
+                processing_duration=processing_time,
                 input_file_info=file_metadata,
                 processing_parameters={
+                    "api_url": self.api_url,
                     "extract_images": self.extract_images,
                     "extract_tables": self.extract_tables,
                     "ocr_enabled": self.ocr_enabled,
-                    "language": self.language
+                    "language": self.language,
                 }
             )
-            
+
             # Create document structure
             element_counts = {}
             for element in content_elements:
                 element_type = element.content_type.value if hasattr(element.content_type, 'value') else str(element.content_type)
                 element_counts[element_type] = element_counts.get(element_type, 0) + 1
-            
+
             document_structure = create_document_structure(
                 total_elements=len(content_elements),
                 total_pages=mineru_result.get("total_pages", 1),
@@ -99,14 +202,14 @@ class MinerUProcessor(BaseDocumentProcessor):
                 has_images=len(images) > 0,
                 language=mineru_result.get("detected_language", "en")
             )
-            
+
             # Generate text representations
-            print(f"DEBUG: Generating plain text", flush=True)
             plain_text = self._generate_plain_text(content_elements)
-            print(f"DEBUG: Generating markdown", flush=True)
-            markdown_text = self._generate_markdown(content_elements, tables, images)
-            print(f"DEBUG: Text generation complete", flush=True)
-            
+            markdown_text = mineru_result.get("markdown_content", self._generate_markdown(content_elements, tables, images))
+
+            logger.info(f"MinerU API processing completed in {processing_time:.2f}s - "
+                       f"{len(content_elements)} elements, {len(tables)} tables, {len(images)} images")
+
             return StandardizedDocumentOutput(
                 content_elements=content_elements,
                 tables=tables,
@@ -118,271 +221,228 @@ class MinerUProcessor(BaseDocumentProcessor):
                 plain_text=plain_text,
                 markdown_text=markdown_text
             )
-            
+
         except Exception as e:
             logger.error(f"Error processing PDF with MinerU {file_path}: {e}")
-            raise
-    
-    def _process_with_mineru(self, file_path: str, file_content: bytes) -> Dict[str, Any]:
+
+            # Attempt fallback to AdvancedPDFProcessor
+            logger.info("Attempting fallback to AdvancedPDFProcessor")
+            try:
+                return self.fallback_processor._process_document(file_path, file_content, **kwargs)
+            except Exception as fallback_error:
+                logger.error(f"Fallback processor also failed: {fallback_error}")
+                raise
+
+    def _process_with_api(self, file_path: str, file_content: bytes) -> Dict[str, Any]:
         """
-        Process PDF using actual MinerU library.
-        
-        MinerU is a high-quality PDF parsing tool that can extract text, images, tables,
-        and maintain document structure. It's particularly good at handling complex layouts.
-        
-        GitHub: https://github.com/opendatalab/MinerU
+        Process PDF using MinerU API service.
+
+        The API accepts multipart file uploads and returns JSON with extracted content.
         """
+        logger.info(f"Sending PDF to MinerU API: {self.api_url}")
+
+        # Prepare the file for upload
+        filename = os.path.basename(file_path)
+
         try:
-            # Try to import MinerU - if not available, fall back to mock
-            try:
-                from magic_pdf.pipe.UNIPipe import UNIPipe
-                from magic_pdf.pipe.OCRPipe import OCRPipe
-                from magic_pdf.pipe.TXTPipe import TXTPipe
-                mineru_available = True
-            except ImportError:
-                logger.warning("MinerU not installed. Using mock processing for development.")
-                return self._mock_mineru_processing(file_path, file_content)
-            
-            # Create temporary file for processing if we have file_content
-            temp_pdf_path = file_path
-            if file_content:
-                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-                    temp_file.write(file_content)
-                    temp_pdf_path = temp_file.name
-            
-            try:
-                # Initialize MinerU pipeline based on configuration
-                if self.ocr_enabled:
-                    pipe = OCRPipe(
-                        pdf_path=temp_pdf_path,
-                        output_dir=self.output_dir,
-                        extract_images=self.extract_images,
-                        extract_tables=self.extract_tables
-                    )
+            with httpx.Client(timeout=self.api_timeout) as client:
+                # MinerU API uses /file_parse endpoint with multipart form data
+                files = {"files": (filename, file_content, "application/pdf")}
+
+                # Build form data for MinerU API
+                data = {
+                    "backend": self.backend,  # Use configured backend (pipeline, vlm-http-client, etc.)
+                    "table_enable": str(self.extract_tables).lower(),
+                    "return_md": "true",
+                    "return_content_list": "true",
+                    "return_images": str(self.extract_images).lower(),
+                }
+
+                # Add server_url for vlm-http-client and hybrid-http-client backends
+                if self.backend in ("vlm-http-client", "hybrid-http-client") and self.vlm_http_url:
+                    data["server_url"] = self.vlm_http_url
+                    logger.info(f"MinerU API request - backend: {self.backend}, server_url: {self.vlm_http_url}")
                 else:
-                    pipe = UNIPipe(
-                        pdf_path=temp_pdf_path,
-                        output_dir=self.output_dir,
-                        extract_images=self.extract_images,
-                        extract_tables=self.extract_tables
-                    )
-                
-                # Process the PDF
-                pipe_result = pipe.pipe_classify()
-                pipe_result = pipe.pipe_analyze()
-                pipe_result = pipe.pipe_parse()
-                
-                # Convert MinerU result to our standardized format
-                result = self._convert_mineru_result(pipe_result, temp_pdf_path)
-                
-                return result
-                
-            finally:
-                # Clean up temporary file if we created one
-                if file_content and temp_pdf_path != file_path:
-                    try:
-                        os.unlink(temp_pdf_path)
-                    except OSError:
-                        pass
-                        
-        except Exception as e:
-            logger.error(f"Error processing PDF with MinerU: {e}")
-            logger.info("Falling back to mock processing")
-            return self._mock_mineru_processing(file_path, file_content)
-    
-    def _convert_mineru_result(self, pipe_result: Any, pdf_path: str) -> Dict[str, Any]:
-        """Convert MinerU pipeline result to our standardized format."""
+                    logger.info(f"MinerU API request - backend: {self.backend}")
+
+                # Set language if specified
+                if self.language != "auto":
+                    data["lang_list"] = self.language
+
+                response = client.post(
+                    f"{self.api_url}/file_parse",
+                    files=files,
+                    data=data
+                )
+
+                if response.status_code != 200:
+                    raise Exception(f"MinerU API returned status {response.status_code}: {response.text}")
+
+                api_result = response.json()
+
+                # Transform API response to our internal format
+                return self._transform_api_response(api_result, filename)
+
+        except httpx.TimeoutException:
+            raise Exception(f"MinerU API timeout after {self.api_timeout}s")
+        except httpx.RequestError as e:
+            raise Exception(f"MinerU API request failed: {e}")
+
+    def _transform_api_response(self, api_result: Dict[str, Any], filename: str) -> Dict[str, Any]:
+        """Transform MinerU API response to our internal format."""
+
+        # MinerU API response format:
+        # {
+        #   "backend": "pipeline",
+        #   "version": "2.7.0",
+        #   "results": {
+        #     "filename_without_ext": {
+        #       "md_content": "...",
+        #       "content_list": "[...]"  # JSON string
+        #     }
+        #   }
+        # }
+
+        # Extract file results from nested structure
+        results = api_result.get("results", {})
+
+        # Get the file key (filename without extension)
+        file_key = Path(filename).stem
+        file_result = results.get(file_key, {})
+
+        # If not found by stem, try first key in results
+        if not file_result and results:
+            file_key = list(results.keys())[0]
+            file_result = results[file_key]
+
+        # Get markdown content
+        markdown_content = file_result.get("md_content", "")
+
+        # Parse content_list (it's a JSON string)
+        content_list_str = file_result.get("content_list", "[]")
         try:
-            # MinerU typically outputs structured data with layout information
-            # This is a simplified conversion - actual implementation would depend on MinerU's output format
-            
-            result = {
-                "total_pages": getattr(pipe_result, 'total_pages', 1),
-                "detected_language": self.language if self.language != "auto" else "en",
-                "content": [],
-                "metadata": {
-                    "title": getattr(pipe_result, 'title', 'Unknown'),
-                    "author": getattr(pipe_result, 'author', 'Unknown'),
-                    "creation_date": getattr(pipe_result, 'creation_date', ''),
-                    "total_words": 0,
-                    "total_characters": 0
-                }
-            }
-            
-            # Process layout elements from MinerU
-            if hasattr(pipe_result, 'layout_dets'):
-                for i, layout_det in enumerate(pipe_result.layout_dets):
-                    element = self._convert_layout_element(layout_det, i)
-                    if element:
-                        result["content"].append(element)
-            
-            # Calculate text statistics
-            total_words = 0
-            total_chars = 0
-            for item in result["content"]:
-                if "text" in item:
-                    text = item["text"]
-                    total_chars += len(text)
-                    total_words += len(text.split())
-            
-            result["metadata"]["total_words"] = total_words
-            result["metadata"]["total_characters"] = total_chars
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error converting MinerU result: {e}")
-            # Return a basic structure if conversion fails
-            return {
-                "total_pages": 1,
-                "detected_language": "en",
-                "content": [],
-                "metadata": {
-                    "title": "Unknown",
-                    "author": "Unknown", 
-                    "creation_date": "",
-                    "total_words": 0,
-                    "total_characters": 0
-                }
-            }
-    
-    def _convert_layout_element(self, layout_det: Any, index: int) -> Optional[Dict[str, Any]]:
-        """Convert a MinerU layout detection element to our format."""
+            if isinstance(content_list_str, str):
+                content_blocks = json.loads(content_list_str)
+            else:
+                content_blocks = content_list_str if content_list_str else []
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse content_list JSON: {content_list_str[:100]}")
+            content_blocks = []
+
+        result = {
+            "total_pages": max([b.get("page_idx", 0) for b in content_blocks], default=0) + 1,
+            "detected_language": self.language if self.language != "auto" else "en",
+            "content": [],
+            "metadata": {
+                "title": filename,
+                "author": "Unknown",
+                "creation_date": "",
+                "total_words": 0,
+                "total_characters": 0,
+                "backend": api_result.get("backend", "pipeline"),
+                "mineru_version": api_result.get("version", "unknown")
+            },
+            "markdown_content": markdown_content,
+        }
+
+        # Process content blocks
+        for block in content_blocks:
+            element = self._convert_api_block(block)
+            if element:
+                result["content"].append(element)
+
+        # If no structured content but markdown is available, create basic content
+        if not result["content"] and result["markdown_content"]:
+            result["content"].append({
+                "type": "paragraph",
+                "text": result["markdown_content"],
+                "page": 1,
+                "bbox": []
+            })
+
+        # Calculate text statistics
+        total_words = 0
+        total_chars = 0
+        for item in result["content"]:
+            if "text" in item:
+                text = item["text"]
+                total_chars += len(text)
+                total_words += len(text.split())
+
+        result["metadata"]["total_words"] = total_words
+        result["metadata"]["total_characters"] = total_chars
+
+        return result
+
+    def _convert_api_block(self, block: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Convert an API content block to our format."""
         try:
-            # MinerU layout elements typically have category_id and bbox
-            category_id = getattr(layout_det, 'category_id', 0)
-            bbox = getattr(layout_det, 'bbox', [0, 0, 0, 0])
-            
-            # Map MinerU categories to our content types
-            # These mappings are based on common layout detection categories
-            category_map = {
-                0: "text",           # Plain text
-                1: "heading",        # Title/heading
-                2: "paragraph",      # Text paragraph  
-                3: "list",          # List item
-                4: "table",         # Table
-                5: "image",         # Figure/image
-                6: "caption",       # Caption
-                7: "header",        # Page header
-                8: "footer",        # Page footer
-                9: "reference",     # Reference/citation
-                10: "equation"      # Mathematical equation
+            block_type = block.get("type", block.get("category", "text"))
+
+            # Map MinerU API types to our types
+            # MinerU uses: text, title, table, image, etc.
+            type_mapping = {
+                "text": "paragraph",
+                "paragraph": "paragraph",
+                "title": "heading",
+                "heading": "heading",
+                "header": "heading",
+                "table": "table",
+                "image": "image",
+                "figure": "image",
+                "equation": "equation",
+                "formula": "equation",
+                "list": "list",
+                "list_item": "list",
             }
-            
-            element_type = category_map.get(category_id, "text")
-            
-            # Extract text content if available
-            text_content = ""
-            if hasattr(layout_det, 'text'):
-                text_content = layout_det.text
-            elif hasattr(layout_det, 'content'):
-                text_content = layout_det.content
-            
-            # Create element structure
+
+            element_type = type_mapping.get(block_type.lower(), "paragraph")
+
+            # MinerU uses page_idx (0-based), convert to page (1-based)
+            page_idx = block.get("page_idx", block.get("page", 0))
+            if isinstance(page_idx, int):
+                page = page_idx + 1
+            else:
+                page = 1
+
             element = {
                 "type": element_type,
-                "text": text_content,
-                "page": getattr(layout_det, 'page_id', 1),
-                "bbox": bbox,
-                "confidence": getattr(layout_det, 'score', 1.0)
+                "text": block.get("text", block.get("content", "")),
+                "page": page,
+                "bbox": block.get("bbox", block.get("bounding_box", [])),
             }
-            
-            # Add type-specific information
-            if element_type == "table" and hasattr(layout_det, 'table_data'):
-                element.update({
-                    "headers": getattr(layout_det.table_data, 'headers', []),
-                    "rows": getattr(layout_det.table_data, 'rows', []),
-                    "caption": getattr(layout_det.table_data, 'caption', None)
-                })
-            
-            elif element_type == "image" and hasattr(layout_det, 'image_path'):
-                element.update({
-                    "image_path": layout_det.image_path,
-                    "alt_text": getattr(layout_det, 'alt_text', f"Image {index}"),
-                    "caption": getattr(layout_det, 'caption', None)
-                })
-            
+
+            # Handle text level (MinerU uses text_level for heading levels)
+            text_level = block.get("text_level", 0)
+            if text_level == 1 or element_type == "heading":
+                element["type"] = "heading"
+                element["level"] = text_level if text_level > 0 else 1
+
+            # Handle tables
+            if element_type == "table":
+                element["table_html"] = block.get("html", block.get("table_html", ""))
+                element["table_body"] = block.get("cells", block.get("table_body", []))
+
+            # Handle images
+            if element_type == "image":
+                element["image_path"] = block.get("path", block.get("img_path", ""))
+                element["image_data"] = block.get("base64", block.get("data", ""))
+                element["alt_text"] = block.get("alt", f"Image from page {element['page']}")
+
             return element
-            
+
         except Exception as e:
-            logger.error(f"Error converting layout element: {e}")
+            logger.warning(f"Error converting API block: {e}")
             return None
-    
-    def _mock_mineru_processing(self, file_path: str, file_content: bytes) -> Dict[str, Any]:
-        """
-        Mock MinerU processing result for development when MinerU is not available.
-        
-        This provides realistic test data that matches the expected MinerU output format.
-        """
-        # Mock result structure based on what MinerU might return
-        mock_result = {
-            "total_pages": 3,
-            "detected_language": "en",
-            "content": [
-                {
-                    "type": "heading",
-                    "text": "Document Title",
-                    "page": 1,
-                    "bbox": [100, 700, 500, 750],
-                    "font_size": 18,
-                    "font_weight": "bold"
-                },
-                {
-                    "type": "paragraph",
-                    "text": "This is the first paragraph of the document. It contains important information about the topic being discussed.",
-                    "page": 1,
-                    "bbox": [100, 600, 500, 680],
-                    "font_size": 12
-                },
-                {
-                    "type": "table",
-                    "page": 2,
-                    "bbox": [100, 400, 500, 600],
-                    "headers": ["Name", "Age", "City"],
-                    "rows": [
-                        ["John Doe", "30", "New York"],
-                        ["Jane Smith", "25", "Los Angeles"],
-                        ["Bob Johnson", "35", "Chicago"]
-                    ],
-                    "caption": "Sample data table"
-                },
-                {
-                    "type": "paragraph",
-                    "text": "This paragraph follows the table and provides additional context.",
-                    "page": 2,
-                    "bbox": [100, 300, 500, 380],
-                    "font_size": 12
-                },
-                {
-                    "type": "image",
-                    "page": 3,
-                    "bbox": [150, 400, 450, 600],
-                    "image_path": f"{self.output_dir}/image_1.png",
-                    "alt_text": "Chart showing data trends",
-                    "caption": "Figure 1: Data trends over time"
-                }
-            ],
-            "metadata": {
-                "title": "Sample Document",
-                "author": "Unknown",
-                "creation_date": "2024-01-01",
-                "total_words": 150,
-                "total_characters": 800
-            }
-        }
-        
-        return mock_result
-    
+
     def _convert_to_content_elements(self, mineru_result: Dict[str, Any]) -> List[ContentElement]:
         """Convert MinerU result to standardized content elements."""
         elements = []
-        
-        import uuid
+
         for i, item in enumerate(mineru_result.get("content", [])):
-            # Use UUID to ensure global uniqueness for component_id in database
             element_id = str(uuid.uuid4())
-            
-            # Map MinerU content types to our standard types
+
+            # Map content types
             content_type_map = {
                 "heading": ContentType.HEADING,
                 "paragraph": ContentType.PARAGRAPH,
@@ -390,37 +450,28 @@ class MinerUProcessor(BaseDocumentProcessor):
                 "list": ContentType.LIST,
                 "table": ContentType.TABLE,
                 "image": ContentType.IMAGE,
-                "code": ContentType.CODE
+                "code": ContentType.CODE,
+                "equation": ContentType.TEXT,
             }
-            
+
             content_type = content_type_map.get(item.get("type", "text"), ContentType.TEXT)
-            
-            # Skip table and image elements here (they're handled separately)
+
+            # Skip table and image elements (handled separately)
             if content_type in [ContentType.TABLE, ContentType.IMAGE]:
                 continue
-            
+
             # Prepare metadata
             metadata = {
                 "page": item.get("page", 1),
                 "font_size": item.get("font_size"),
                 "font_weight": item.get("font_weight"),
-                "mineru_type": item.get("type")
+                "source_type": item.get("type")
             }
-            
-            # Add level for headings (required by standards)
+
+            # Add level for headings
             if content_type == ContentType.HEADING:
-                # Determine heading level from font size or default to 1
-                font_size = item.get("font_size", 18)
-                if font_size >= 18:
-                    level = 1
-                elif font_size >= 16:
-                    level = 2
-                elif font_size >= 14:
-                    level = 3
-                else:
-                    level = 4
-                metadata["level"] = level
-            
+                metadata["level"] = item.get("level", 1)
+
             element = create_content_element(
                 element_id=element_id,
                 content_type=content_type,
@@ -436,143 +487,207 @@ class MinerUProcessor(BaseDocumentProcessor):
                     "color": item.get("color")
                 }
             )
-            
+
             elements.append(element)
-        
+
         return elements
-    
+
     def _extract_tables_from_result(self, mineru_result: Dict[str, Any]) -> List[TableData]:
         """Extract table data from MinerU result."""
         tables = []
-        
+
         for item in mineru_result.get("content", []):
             if item.get("type") == "table":
+                # Parse table body if available
+                table_body = item.get("table_body", [])
+                headers = []
+                rows = []
+
+                if table_body:
+                    if len(table_body) > 0:
+                        headers = [str(cell) for cell in table_body[0]]
+                        rows = [[str(cell) for cell in row] for row in table_body[1:]]
+
                 table = create_table_data(
-                    headers=item.get("headers", []),
-                    rows=item.get("rows", []),
+                    headers=headers,
+                    rows=rows,
                     caption=item.get("caption"),
                     metadata={
                         "page": item.get("page", 1),
                         "bbox": item.get("bbox", []),
-                        "table_id": f"table_{len(tables)+1}"
+                        "table_id": f"table_{len(tables)+1}",
+                        "table_html": item.get("table_html", "")
                     }
                 )
                 tables.append(table)
-        
+
         return tables
-    
+
     def _extract_images_from_result(self, mineru_result: Dict[str, Any]) -> List[ImageData]:
         """Extract image data from MinerU result."""
         images = []
-        
+
         for item in mineru_result.get("content", []):
             if item.get("type") == "image":
+                # Save base64 image if provided
+                image_path = item.get("image_path", "")
+                if not image_path and item.get("image_data"):
+                    # Save base64 image to file
+                    image_path = self._save_base64_image(
+                        item["image_data"],
+                        f"image_{len(images)+1}",
+                        item.get("page", 1)
+                    )
+
                 image = create_image_data(
                     image_id=f"image_{len(images)+1}",
-                    file_path=item.get("image_path"),
-                    alt_text=item.get("alt_text"),
+                    file_path=image_path,
+                    alt_text=item.get("alt_text", f"Image {len(images)+1}"),
                     caption=item.get("caption"),
                     metadata={
                         "page": item.get("page", 1),
                         "bbox": item.get("bbox", []),
-                        "extraction_method": "mineru"
+                        "extraction_method": "mineru_api"
                     }
                 )
                 images.append(image)
-        
+
         return images
-    
+
+    def _save_base64_image(self, base64_data: str, image_id: str, page: int) -> str:
+        """Save a base64-encoded image to file."""
+        try:
+            # Remove data URL prefix if present
+            if "," in base64_data:
+                base64_data = base64_data.split(",")[1]
+
+            image_bytes = base64.b64decode(base64_data)
+
+            # Determine format from header
+            if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                ext = ".png"
+            elif image_bytes[:2] == b'\xff\xd8':
+                ext = ".jpg"
+            else:
+                ext = ".png"  # Default to PNG
+
+            image_path = Path(self.output_dir) / f"{image_id}_page{page}{ext}"
+            image_path.write_bytes(image_bytes)
+
+            return str(image_path)
+
+        except Exception as e:
+            logger.warning(f"Failed to save base64 image: {e}")
+            return ""
+
     def _generate_plain_text(self, content_elements: List[ContentElement]) -> str:
         """Generate plain text from content elements."""
         lines = []
-        
+
         for element in content_elements:
             if element.content_type in [
-                ContentType.TEXT, 
-                ContentType.PARAGRAPH, 
+                ContentType.TEXT,
+                ContentType.PARAGRAPH,
                 ContentType.HEADING
             ]:
-                lines.append(element.content)
-        
+                if element.content.strip():
+                    lines.append(element.content)
+
         return '\n\n'.join(lines)
-    
+
     def _generate_markdown(
-        self, 
-        content_elements: List[ContentElement], 
-        tables: List[TableData], 
+        self,
+        content_elements: List[ContentElement],
+        tables: List[TableData],
         images: List[ImageData]
     ) -> str:
         """Generate markdown from all content."""
         lines = []
-        
+
         # Process content elements
         for element in content_elements:
             if element.content_type == ContentType.HEADING:
-                # Determine heading level from font size or default to H1
-                font_size = element.formatting.get("font_size", 18)
-                if font_size >= 18:
-                    level = 1
-                elif font_size >= 16:
-                    level = 2
-                elif font_size >= 14:
-                    level = 3
-                else:
-                    level = 4
-                
+                level = element.metadata.get("level", 1) if element.metadata else 1
                 lines.append(f"{'#' * level} {element.content}")
-            
+
             elif element.content_type == ContentType.PARAGRAPH:
-                lines.append(element.content)
-            
+                if element.content.strip():
+                    lines.append(element.content)
+
             elif element.content_type == ContentType.LIST:
                 lines.append(f"- {element.content}")
-            
+
             else:
-                lines.append(element.content)
-        
+                if element.content.strip():
+                    lines.append(element.content)
+
         # Add tables
         for table in tables:
             if table.caption:
                 lines.append(f"**{table.caption}**")
-            
+
             if table.headers:
-                # Create markdown table
                 header_row = "| " + " | ".join(table.headers) + " |"
                 separator_row = "|" + "|".join([" --- " for _ in table.headers]) + "|"
                 lines.append(header_row)
                 lines.append(separator_row)
-                
+
                 for row in table.rows:
                     row_text = "| " + " | ".join(str(cell) for cell in row) + " |"
                     lines.append(row_text)
-        
+
         # Add images
         for image in images:
             alt_text = image.alt_text or f"Image {image.image_id}"
             image_path = image.file_path or f"#{image.image_id}"
-            
+
             lines.append(f"![{alt_text}]({image_path})")
-            
+
             if image.caption:
                 lines.append(f"*{image.caption}*")
-        
+
         return '\n\n'.join(lines)
-    
+
     def validate_config(self) -> List[str]:
         """Validate MinerU processor configuration."""
         errors = super().validate_config()
-        
+
         # Check if output directory is writable
         try:
             output_path = Path(self.output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Test write access
+
             test_file = output_path / "test_write.tmp"
             test_file.write_text("test")
             test_file.unlink()
-            
+
         except Exception as e:
             errors.append(f"Output directory not writable: {e}")
-        
+
+        # Check API availability
+        if self.api_enabled and not self.is_available():
+            errors.append(f"MinerU API not available at {self.api_url} - will use fallback processor")
+
         return errors
+
+    def get_processor_info(self) -> Dict[str, Any]:
+        """Get processor information."""
+        return {
+            "name": self.processor_name,
+            "version": self.processor_version,
+            "api_url": self.api_url,
+            "api_enabled": self.api_enabled,
+            "api_available": self.is_available() if self.api_enabled else False,
+            "supported_formats": self.get_supported_formats(),
+            "config": {
+                "extract_images": self.extract_images,
+                "extract_tables": self.extract_tables,
+                "ocr_enabled": self.ocr_enabled,
+                "language": self.language,
+                "api_timeout": self.api_timeout,
+            }
+        }
+
+    def reset_api_cache(self):
+        """Reset the API availability cache to force a new check."""
+        self._api_available = None

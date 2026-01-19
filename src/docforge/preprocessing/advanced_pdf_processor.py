@@ -146,13 +146,14 @@ class AdvancedPDFProcessor(BaseDocumentProcessor):
         start_time = time.time()
         
         try:
-            # Create temporary file if we have file_content
-            if file_content and not file_path:
+            # Create temporary file if we have file_content and no valid file_path
+            if file_content and (not file_path or not os.path.exists(file_path)):
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
                 temp_file.write(file_content)
                 temp_file.close()
                 file_path = temp_file.name
-            
+                logger.info(f"Created temp file for processing: {file_path}")
+
             if not file_path or not os.path.exists(file_path):
                 raise ValueError("No valid file path provided for PDF processing")
             

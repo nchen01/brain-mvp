@@ -25,22 +25,27 @@ class ProcessorFactory:
         """Initialize and register all available processors."""
         try:
             # Register all processors for full functionality
-            
-            # Advanced PDF processor (uses PyMuPDF/pdfplumber)
-            from .advanced_pdf_processor import AdvancedPDFProcessor
-            mineru_processor = AdvancedPDFProcessor()
+
+            # MinerU PDF processor (primary PDF processor with fallback to AdvancedPDFProcessor)
+            mineru_processor = MinerUProcessor()
             processor_registry.register_processor("mineru", mineru_processor)
-            
+
+            # Log MinerU availability status
+            if mineru_processor.is_available():
+                logger.info("MinerU processor initialized (magic-pdf available)")
+            else:
+                logger.info("MinerU processor initialized (using AdvancedPDFProcessor fallback)")
+
             # Text processor for basic text files
             text_processor = TextDocumentProcessor()
             processor_registry.register_processor("text", text_processor)
-            
-            # MarkItDown processor for Office documents
+
+            # MarkItDown processor for Office documents (placeholder)
             markitdown_processor = MarkItDownProcessor()
             processor_registry.register_processor("markitdown", markitdown_processor)
-            
-            logger.info("All processors initialized successfully (MinerU, MarkItDown, Text)")
-            
+
+            logger.info("All processors initialized successfully")
+
         except Exception as e:
             logger.error(f"Error initializing processors: {e}")
             # Don't raise - allow system to work with available processors

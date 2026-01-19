@@ -18,26 +18,196 @@ services:
       - PROCESSING__USE_EMBEDDINGS=${PROCESSING__USE_EMBEDDINGS:-false}
       - PROCESSING__EMBEDDING_MODEL=${PROCESSING__EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # MinerU API configuration (calls external MinerU service)
+      # Internal container network uses port 8080 regardless of external mapping
+      - MINERU_API_URL=http://mineru-api:8080
+      - MINERU_API_ENABLED=true
+      - MINERU_BACKEND=vlm-http-client
+      # VLM server URL for vlm-http-client backend (Docker Model Runner)
+      # Docker Model Runner requires /engines/llama.cpp path prefix
+      - MINERU_SERVER_URL=http://model-runner.docker.internal/engines/llama.cpp
+      - HF_HOME=/app/data/.cache/huggingface
     volumes:
       - .:/app
       - ./data:/app/data
       - ./logs:/app/logs
       - ./uploads:/app/uploads
       - ./processed:/app/processed
+      # Shared volume for MinerU output
+      - mineru_output:/app/data/mineru_output
+      - huggingface_cache:/app/data/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # mineru-api:  # Disabled - requires NVIDIA GPU
+      #   condition: service_started
     networks:
       - brain-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+
+  # MinerU API Service - CPU Version (Mac/Intel compatible)
+  # Use profile "cpu" to enable: docker-compose --profile cpu up -d
+  mineru-api-cpu:
+    profiles: ["cpu"]
+    build:
+      context: ./docker/mineru
+      dockerfile: Dockerfile.cpu
+    image: mineru-cpu:latest
+    container_name: mineru-api
+    restart: always
+    ports:
+      - "8001:8080"
+    volumes:
+      - ./uploads:/pdfs
+      - mineru_output:/output
+    environment:
+      MINERU_MODEL_SOURCE: local
+      MINERU_BACKEND: pipeline
+    networks:
+      - brain-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 8G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # MinerU API Service - Mac Model Runner Version (Apple Silicon recommended)
+  # Use profile "mac-modelrunner" to enable: docker compose --profile mac-modelrunner up -d
+  # Requires Docker Desktop Model Runner running a vision-capable GGUF model on host port 8001
+  mineru-api-mac-modelrunner:
+    profiles: ["mac-modelrunner"]
+    build:
+      context: ./docker/mineru
+      dockerfile: Dockerfile.cpu
+    image: mineru-cpu:latest
+    container_name: mineru-api
+    restart: always
+    ports:
+      - "8002:8080"
+    volumes:
+      - ./uploads:/pdfs
+      - mineru_output:/output
+    environment:
+      # Use MinerU HTTP client backend that talks to OpenAI-compatible server
+      MINERU_BACKEND: vlm-http-client
+      # VLM server URL (Docker Model Runner) - requires /engines/llama.cpp prefix
+      MINERU_SERVER_URL: http://model-runner.docker.internal/engines/llama.cpp
+    networks:
+      - brain-network
+    # Note: backend is passed per-request, not via CLI to avoid conflicts
+    # The VLM URL is passed via environment variable VLM_HTTP_BASE_URL
+    entrypoint: mineru-api
+    command:
+      --host 0.0.0.0
+      --port 8080
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 8G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # MinerU API Service - GPU Version (NVIDIA only)
+  # Use profile "gpu" to enable: docker-compose --profile gpu up -d
+  mineru-api-gpu:
+    profiles: ["gpu"]
+    build:
+      context: ./docker/mineru
+      dockerfile: Dockerfile
+    image: mineru-gpu:latest
+    container_name: mineru-api
+    restart: always
+    ports:
+      - "8001:8080"
+    volumes:
+      - ./uploads:/pdfs
+      - mineru_output:/vllm-workspace/output
+    environment:
+      MINERU_MODEL_SOURCE: local
+    entrypoint: mineru-api
+    command:
+      --host 0.0.0.0
+      --port 8080
+      --backend vlm-vllm-engine
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    networks:
+      - brain-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  # MinerU Gradio Web UI (GPU version only)
+  # Use profile "gpu" to enable
+  mineru-gradio:
+    profiles: ["gpu"]
+    image: mineru-gpu:latest
+    container_name: mineru-gradio
+    restart: always
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./uploads:/pdfs
+      - mineru_output:/vllm-workspace/output
+    environment:
+      MINERU_MODEL_SOURCE: local
+    entrypoint: mineru-gradio
+    command:
+      --server-name 0.0.0.0
+      --server-port 7860
+      --enable-vllm-engine false
+      --enable-api true
+      --api-url http://mineru-api:8080
+    networks:
+      - brain-network
+    depends_on:
+      - mineru-api-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
 
   # PostgreSQL Database
   postgres:
@@ -85,6 +255,11 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  # Shared volume for MinerU output files
+  mineru_output:
+    driver: local
+  huggingface_cache:
     driver: local
 
 networks:

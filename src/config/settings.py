@@ -106,27 +106,54 @@ class LightRAGConfig(BaseModel):
     cache_size_mb: int = Field(default=512, ge=64, le=4096, description="Cache size in MB")
 
 
+class MinerUConfig(BaseModel):
+    """MinerU PDF processor configuration (API-based)."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # API configuration
+    api_url: str = Field(default="http://mineru-api:8080", description="MinerU API service URL")
+    api_enabled: bool = Field(default=True, description="Enable MinerU API for PDF processing")
+    api_timeout: int = Field(default=300, ge=30, le=1800, description="API request timeout in seconds")
+
+    # Feature flags
+    extract_images: bool = Field(default=True, description="Extract images from PDFs")
+    extract_tables: bool = Field(default=True, description="Extract tables from PDFs")
+    ocr_enabled: bool = Field(default=True, description="Enable OCR for scanned documents")
+
+    # Language settings
+    language: str = Field(default="auto", description="Document language or 'auto' for detection")
+
+    # Output settings
+    output_dir: str = Field(default="./data/mineru_output", description="Directory for MinerU output files")
+
+    # Fallback settings
+    enable_fallback: bool = Field(default=True, description="Enable fallback to AdvancedPDFProcessor if MinerU API fails")
+
+
 class ProcessingConfig(BaseModel):
     """Document processing configuration."""
     model_config = ConfigDict(str_strip_whitespace=True)
-    
+
     # Processing limits
     max_concurrent_documents: int = Field(default=5, ge=1, le=20, description="Max concurrent document processing")
     processing_timeout_minutes: int = Field(default=30, ge=5, le=120, description="Processing timeout in minutes")
-    
+
     # Processor configurations
     enable_mineru: bool = Field(default=True, description="Enable MinerU PDF processor")
     enable_markitdown: bool = Field(default=True, description="Enable MarkItDown processor")
-    
+
+    # MinerU specific configuration
+    mineru: MinerUConfig = Field(default_factory=MinerUConfig, description="MinerU processor settings")
+
     # Quality settings
     min_confidence_score: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum confidence score")
     enable_quality_checks: bool = Field(default=True, description="Enable quality validation")
-    
+
     # Post-processing settings
     enable_chunking: bool = Field(default=True, description="Enable document chunking")
     enable_abbreviation_expansion: bool = Field(default=True, description="Enable abbreviation expansion")
     default_chunk_size: int = Field(default=1000, ge=100, le=5000, description="Default chunk size in characters")
-    
+
     # Context enrichment settings (Phase 2)
     enable_context_enrichment: bool = Field(default=False, description="Enable LLM-based context enrichment for chunks")
     context_enrichment_model: str = Field(default="gpt-3.5-turbo", description="OpenAI model for context generation")
@@ -258,9 +285,11 @@ class Settings(BaseSettings):
             self.storage.logs_dir,
             self.storage.temp_dir,
             self.lightrag.working_dir,
-            Path(self.lightrag.vector_db_path).parent
+            Path(self.lightrag.vector_db_path).parent,
+            # MinerU output directory
+            self.processing.mineru.output_dir,
         ]
-        
+
         for directory in directories:
             Path(directory).mkdir(parents=True, exist_ok=True)
     

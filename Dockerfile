@@ -7,36 +7,22 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # HuggingFace and model cache directories
     HF_HOME=/app/data/.cache/huggingface \
     TRANSFORMERS_CACHE=/app/data/.cache/transformers \
     SENTENCE_TRANSFORMERS_HOME=/app/data/.cache/sentence-transformers
 
-# Install system dependencies
+# Install system dependencies (slimmed down - MinerU runs in separate container)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
     libpq-dev \
     libmagic1 \
+    # PDF processing dependencies for fallback processor
     poppler-utils \
     tesseract-ocr \
     tesseract-ocr-eng \
-    libreoffice \
-    # Additional dependencies for advanced document processing
-    libgl1-mesa-dev \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    # Java for tabula-py (table extraction)
-    default-jre \
-    # Additional OCR languages
-    tesseract-ocr-fra \
-    tesseract-ocr-deu \
-    tesseract-ocr-spa \
-    # Image processing dependencies
-    libopencv-dev \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
@@ -52,9 +38,9 @@ FROM base AS dependencies
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# Install uv for faster package installation, then install dependencies
+RUN pip install --upgrade pip uv && \
+    uv pip install --system -r requirements.txt
 
 # Stage 3: Development image
 FROM dependencies AS development
@@ -68,17 +54,18 @@ RUN chown -R appuser:appuser /app
 # Switch to app user
 USER appuser
 
-# Create necessary directories (including cache for HuggingFace models)
+# Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/uploads /app/processed \
     /app/data/.cache/huggingface \
     /app/data/.cache/transformers \
-    /app/data/.cache/sentence-transformers
+    /app/data/.cache/sentence-transformers \
+    /app/data/mineru_output
 
 # Expose port
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Development command with hot reload
@@ -100,17 +87,18 @@ RUN chown -R appuser:appuser /app
 # Switch to app user
 USER appuser
 
-# Create necessary directories (including cache for HuggingFace models)
+# Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/uploads /app/processed \
     /app/data/.cache/huggingface \
     /app/data/.cache/transformers \
-    /app/data/.cache/sentence-transformers
+    /app/data/.cache/sentence-transformers \
+    /app/data/mineru_output
 
 # Expose port
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Production command
