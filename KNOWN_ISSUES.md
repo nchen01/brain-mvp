@@ -201,14 +201,69 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up 
 ```
 
 The `docker-compose.gpu.yml` override file:
-- Sets `MINERU_BACKEND=vlm-vllm-engine` for the brain-mvp app
+- Sets `MINERU_BACKEND=pipeline` for the brain-mvp app (see note below about VLM backends)
 - Removes the Model Runner URL configuration
 - Adds proper dependency on the GPU MinerU service
+- Configures GPU memory utilization for cards with 8GB VRAM
 
 This requires:
 - NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper)
 - NVIDIA Container Toolkit installed
 - Linux or WSL2 on Windows
+
+**Tested Configurations:**
+- RTX 3060 Ti (8GB VRAM) - use `VLLM_GPU_MEMORY_UTILIZATION=0.85`
+- RTX 3060 (12GB VRAM) - use `VLLM_GPU_MEMORY_UTILIZATION=0.90`
+- RTX 3090/4090 (24GB VRAM) - default settings work well
+
+---
+
+---
+
+## MinerU API Known Issues (GPU Profile)
+
+### Issue 1: Duplicate Backend Parameter Error
+
+**Symptom:**
+```
+MinerU API returned status 500: {"error":"Failed to process file: mineru.cli.common.aio_do_parse() got multiple values for keyword argument 'backend'"}
+```
+
+**Cause:** When MinerU API is started with `--backend` CLI argument AND receives `backend` in the request body, the internal function receives the parameter twice.
+
+**Solution:** Don't pass `--backend` to the MinerU API CLI. Instead, pass the backend in each request. This is handled automatically by the `docker-compose.gpu.yml` configuration.
+
+### Issue 2: VLM Backend Async Mode Error
+
+**Symptom:**
+```
+{"error":"Failed to process file: vlm-vllm-engine backend is not supported in async mode, please use vlm-vllm-async-engine backend"}
+```
+
+**Cause:** The `vlm-vllm-engine` backend is designed for synchronous CLI usage, not for the async FastAPI server.
+
+**Solution:** Use `vlm-vllm-async-engine` for API calls, or use the `pipeline` backend which works reliably.
+
+### Issue 3: PyTorch Version Conflict with GPU Backends
+
+**Symptom:**
+```
+{"error":"Failed to process file: Tried to instantiate class '_core_C.ScalarType', but it does not exist!"}
+```
+
+**Cause:** vLLM 0.6.1 requires `torch==2.4.0`, but MinerU installs `torch 2.9.1`. This version mismatch causes errors when using `vlm-auto-engine` or `hybrid-auto-engine` backends.
+
+**Solution:** Use the `pipeline` backend instead. It provides reliable PDF processing with layout detection, OCR, and table extraction without the VLM components. The current GPU configuration uses `pipeline` by default.
+
+### Valid MinerU API Backends
+
+| Backend | Description | Status |
+|---------|-------------|--------|
+| `pipeline` | CPU-based with GPU-accelerated OCR | **Recommended** |
+| `vlm-auto-engine` | Local GPU VLM processing | Broken (PyTorch conflict) |
+| `vlm-http-client` | External VLM API | Works with external server |
+| `hybrid-auto-engine` | Next-gen local processing | Broken (PyTorch conflict) |
+| `hybrid-http-client` | External VLM + local processing | Works with external server |
 
 ---
 
@@ -231,6 +286,51 @@ This requires:
 - [llama.cpp Server Documentation](https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md)
 - [MinerU Documentation](https://github.com/opendatalab/MinerU)
 - [Supported Vision Models for llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/examples/llava/README.md)
+
+---
+
+## Abbreviation Expansion - Duplicate Expansion Bug
+
+### Issue Description
+
+When abbreviations are expanded, some abbreviations may be expanded multiple times in the output, resulting in duplicated expansions like:
+
+```
+"The AI (Artificial Intelligence) (Artificial Intelligence) (Artificial Intelligence) field..."
+```
+
+Instead of the expected:
+
+```
+"The AI (Artificial Intelligence) field..."
+```
+
+### Symptoms
+
+- Abbreviations appear with multiple parenthetical expansions
+- The duplication count varies (sometimes 2x, sometimes 3x)
+- Affects abbreviations that appear multiple times in the original text
+
+### Root Cause
+
+The `AbbreviationExpander` may be processing already-expanded text, causing it to re-expand abbreviations that were already expanded in a previous pass. This can happen when:
+1. The expander runs multiple passes over the text
+2. The expanded text is used as input for subsequent processing
+
+### Workaround
+
+The feature still works correctly for RAG purposes - the expanded text contains the full terms and will be searchable. The duplication is cosmetic and does not affect retrieval accuracy.
+
+### Status
+
+**Priority**: Low
+**Status**: Known issue, fix pending
+
+### Planned Fix
+
+- Add detection to skip already-expanded abbreviations (check for pattern `ABBREV (Expansion)`)
+- Implement single-pass expansion to avoid re-processing
+- Add unit tests for edge cases
 
 ---
 

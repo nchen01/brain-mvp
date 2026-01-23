@@ -2,16 +2,22 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d
 #
 # This override file configures the brain-mvp app to work with MinerU's GPU backend (vLLM).
-# Requires: NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper)
+# Tested with: NVIDIA GeForce RTX 3060 Ti (8GB VRAM, Compute Capability 8.6, Ampere GA104)
+# Compatible with: NVIDIA GPUs with compute capability 8.0+ (Ampere/Ada/Hopper)
 
 services:
   brain-mvp:
     environment:
-      # Override MinerU settings for GPU backend
-      # Let MinerU GPU service handle the backend selection (vlm-vllm-engine)
-      - MINERU_BACKEND=vlm-vllm-engine
+      # Send backend in request - MinerU API doesn't accept --backend CLI arg (causes duplicate param error)
+      # Valid backends: pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client
+      # Note: GPU backends (vlm-auto-engine, hybrid-auto-engine) have PyTorch version conflicts
+      # Using 'pipeline' which works reliably with layout detection, OCR, and table extraction
+      - MINERU_BACKEND=pipeline
       # Remove the Model Runner URL - not needed for GPU
       - MINERU_SERVER_URL=
+      # CUDA environment for GPU operations
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
     depends_on:
       postgres:
         condition: service_healthy
@@ -19,3 +25,46 @@ services:
         condition: service_healthy
       mineru-api-gpu:
         condition: service_started
+
+  # Override mineru-api-gpu settings for RTX 3060 Ti (8GB VRAM)
+  mineru-api-gpu:
+    environment:
+      MINERU_MODEL_SOURCE: local
+      # CUDA configuration for RTX 3060 Ti
+      NVIDIA_VISIBLE_DEVICES: all
+      CUDA_VISIBLE_DEVICES: "0"
+      # vLLM memory configuration for 8GB VRAM
+      # Reserve ~1GB for system, leaving ~7GB for models
+      VLLM_GPU_MEMORY_UTILIZATION: "0.85"
+    deploy:
+      resources:
+        limits:
+          # Limit container memory to prevent OOM
+          memory: 16G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu, compute, utility]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 180s
+
+  # Override mineru-gradio settings for RTX 3060 Ti
+  mineru-gradio:
+    environment:
+      MINERU_MODEL_SOURCE: local
+      NVIDIA_VISIBLE_DEVICES: all
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu, compute, utility]

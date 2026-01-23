@@ -30,10 +30,10 @@ The Brain MVP Docker setup provides a complete containerized environment with:
    ```
 
 3. **Access Services**
-   - Application: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-   - PostgreSQL: localhost:5432
-   - Redis: localhost:6379
+   - Application: http://localhost:8088
+   - API Docs: http://localhost:8088/docs
+   - PostgreSQL: localhost:5433
+   - Redis: localhost:6380
 
 ### **Production Environment**
 
@@ -91,10 +91,10 @@ GRAFANA_PASSWORD=admin_password_change_this
 ### **Service Configuration**
 
 #### **Main Application**
-- **Port**: 8000 (internal), 80/443 (via Nginx)
-- **Resources**: 2 CPU, 4GB RAM (production)
+- **Port**: 8088 (external), 8000 (internal container), 80/443 (via Nginx)
+- **Resources**: 2-4 CPU, 4-8GB RAM (production)
 - **Health Check**: `/health` endpoint
-- **Restart Policy**: `always` (production)
+- **Restart Policy**: `unless-stopped` (development), `always` (production)
 
 #### **PostgreSQL**
 - **Version**: PostgreSQL 15 Alpine
@@ -380,6 +380,60 @@ LOG_LEVEL=DEBUG
 ./scripts/docker-dev.sh restart
 ```
 
+## 🎮 **GPU Deployment (NVIDIA)**
+
+### Prerequisites
+
+- NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper architecture)
+- NVIDIA Container Toolkit installed
+- Linux or WSL2 on Windows
+
+### Tested Configurations
+
+| GPU | VRAM | Memory Utilization Setting |
+|-----|------|---------------------------|
+| RTX 3060 Ti | 8GB | `VLLM_GPU_MEMORY_UTILIZATION=0.85` |
+| RTX 3060 | 12GB | `VLLM_GPU_MEMORY_UTILIZATION=0.90` |
+| RTX 3090/4090 | 24GB | Default settings |
+
+### Starting GPU Profile
+
+```bash
+# Start all GPU services
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d
+
+# Check GPU is being used
+nvidia-smi
+
+# View MinerU logs
+docker compose logs -f mineru-api
+```
+
+### GPU Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| brain-mvp-app | 8088 | Main application |
+| mineru-api | 8001 | MinerU GPU processing service |
+| mineru-gradio | 7860 | MinerU web interface |
+
+### Configuration (`docker-compose.gpu.yml`)
+
+The GPU override file configures:
+- `MINERU_BACKEND=pipeline` - Uses reliable pipeline backend with GPU-accelerated OCR
+- `VLLM_GPU_MEMORY_UTILIZATION=0.85` - Optimized for 8GB VRAM cards
+- GPU device reservation and capabilities
+- Extended health check timeouts for model loading
+
+### Known Issues
+
+See [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) for:
+- MinerU API duplicate backend parameter error
+- PyTorch version conflicts with VLM backends
+- Recommended backend configurations
+
+---
+
 ## 📚 **Additional Resources**
 
 - [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
@@ -403,6 +457,6 @@ For issues and questions:
 
 ---
 
-**Last Updated**: October 2025  
-**Docker Version**: 20.10+  
+**Last Updated**: January 2026
+**Docker Version**: 20.10+
 **Compose Version**: 2.0+

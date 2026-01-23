@@ -7,7 +7,7 @@ services:
       target: development
     container_name: brain-mvp-app
     ports:
-      - "8080:8000"
+      - "8088:8000"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://brain_user:brain_password@postgres:5432/brain_mvp
@@ -17,6 +17,9 @@ services:
       - PROCESSING__DEFAULT_CHUNKING_STRATEGY=${PROCESSING__DEFAULT_CHUNKING_STRATEGY:-recursive}
       - PROCESSING__USE_EMBEDDINGS=${PROCESSING__USE_EMBEDDINGS:-false}
       - PROCESSING__EMBEDDING_MODEL=${PROCESSING__EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      # Abbreviation expansion (expands acronyms before chunking for better RAG accuracy)
+      - PROCESSING__ENABLE_ABBREVIATION_EXPANSION=${PROCESSING__ENABLE_ABBREVIATION_EXPANSION:-true}
+      - PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD=${PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD:-0.7}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # MinerU API configuration (calls external MinerU service)
       # Internal container network uses port 8080 regardless of external mapping
@@ -161,7 +164,8 @@ services:
     command:
       --host 0.0.0.0
       --port 8080
-      --backend vlm-vllm-engine
+      # NOTE: Don't pass --backend here - it causes "multiple values for keyword argument"
+      # error in MinerU API. Pass backend via request parameter instead.
     ulimits:
       memlock: -1
       stack: 67108864

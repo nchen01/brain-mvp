@@ -1,6 +1,11 @@
 # MinerU Docker Image with vLLM support
 # Based on official MinerU docker configuration
-# Requires NVIDIA GPU with Ampere/Ada/Hopper architecture (compute capability 8.0-9.0)
+# Requires NVIDIA GPU with Ampere/Ada/Hopper architecture (compute capability 8.0+)
+#
+# Tested configurations:
+# - RTX 3060 Ti (8GB VRAM, CC 8.6) - use VLLM_GPU_MEMORY_UTILIZATION=0.85
+# - RTX 3060 (12GB VRAM, CC 8.6) - use VLLM_GPU_MEMORY_UTILIZATION=0.90
+# - RTX 3090/4090 (24GB VRAM) - default settings work well
 
 FROM vllm/vllm-openai:v0.6.1.post2
 

@@ -13,7 +13,8 @@ The following diagram illustrates the complete journey of a document from upload
 ```mermaid
 graph TD
     A[User Upload] -->|PDF| B[MinerU Processor]
-    B -->|Raw Text/Tables/Images| C[Document Chunker]
+    B -->|Raw Text/Tables/Images| B5[Abbreviation Expander]
+    B5 -->|Expanded Text| C[Document Chunker]
     C -->|Strategy: Recursive/Semantic| D[Context Enricher]
     D -->|Enriched Chunks| E[Multi-Tier Storage]
 
@@ -28,6 +29,12 @@ graph TD
     B1 --> M1[pipeline - CPU]
     B1 --> M2[vlm-http-client - VLM]
     B1 --> M3[vlm-vllm-engine - GPU]
+    end
+
+    subgraph "Pre-Processing"
+    B5 --> B5a[Domain Detection]
+    B5 --> B5b[Confidence Scoring]
+    B5 --> B5c[Inline Expansion]
     end
 
     subgraph "RAG Preparation"
@@ -56,11 +63,15 @@ The **MinerU Processor** is the primary extraction engine with automatic fallbac
 - **Image Extraction**: Preserves embedded images with position data
 
 #### Backend Options
-| Backend | Description | Requirements |
-|---------|-------------|--------------|
-| `pipeline` | CPU-based processing, uses traditional ML models | Any CPU |
-| `vlm-http-client` | Uses external VLM API (OpenAI-compatible) | VLM server |
-| `vlm-vllm-engine` | GPU-accelerated with vLLM | NVIDIA GPU |
+| Backend | Description | Requirements | Status |
+|---------|-------------|--------------|--------|
+| `pipeline` | CPU-based processing with GPU-accelerated OCR | Any CPU/GPU | **Recommended** |
+| `vlm-http-client` | Uses external VLM API (OpenAI-compatible) | VLM server | Works |
+| `vlm-auto-engine` | Local GPU VLM processing | NVIDIA GPU | PyTorch conflict |
+| `hybrid-auto-engine` | Next-gen local GPU processing | NVIDIA GPU | PyTorch conflict |
+| `hybrid-http-client` | External VLM + local processing | VLM server | Works |
+
+> **Note**: Due to PyTorch version conflicts between vLLM 0.6.1 (requires torch 2.4.0) and MinerU (installs torch 2.9.1), the VLM-based backends (`vlm-auto-engine`, `hybrid-auto-engine`) are currently broken. Use `pipeline` for reliable GPU-accelerated processing.
 
 #### Fallback Processors
 If MinerU is unavailable, the system falls back to:
@@ -68,13 +79,51 @@ If MinerU is unavailable, the system falls back to:
 - **pdfplumber**: Better for complex layouts and tables
 - **pdfminer**: Final fallback for difficult or legacy PDFs
 
-### 2. Chunking Phase
+### 2. Abbreviation Expansion Phase
+Before chunking, the system expands abbreviations and acronyms inline to improve RAG retrieval accuracy. For example, "API" becomes "API (Application Programming Interface)". This ensures that searches for either "API" or "Application Programming Interface" will find relevant content.
+
+**How It Works:**
+1. The `AbbreviationExpander` scans the document text for known abbreviations
+2. Each abbreviation is looked up in domain-specific dictionaries
+3. If confidence exceeds the threshold, the expansion is inserted inline
+4. Both the original text and expanded text are preserved for comparison
+
+**Supported Domains:**
+- **Technical**: API, SQL, HTTP, HTML, CSS, JSON, REST, SDK, etc.
+- **Academic**: NLP, ML, AI, PhD, GPA, etc.
+- **Business**: CEO, CFO, ROI, KPI, B2B, etc.
+- **Medical**: MRI, CT, ICU, ER, etc.
+- **General**: USA, UK, NASA, FBI, etc.
+
+**Features:**
+- **Domain-Aware Detection**: Recognizes abbreviations from multiple domains simultaneously
+- **Confidence Scoring**: Only expands when confidence exceeds threshold (default: 0.7)
+- **Inline Expansion**: Preserves readability by keeping the abbreviation with expansion in parentheses
+- **Persistence**: Expansion data is stored in the database and retrievable via API
+- **Extensible Database**: Custom abbreviations can be added via `data/abbreviations.json`
+
+**API Endpoint:**
+```bash
+# Get all abbreviation expansions for a document
+curl "http://localhost:8088/api/v1/documents/{document_id}/abbreviations"
+
+# Response includes:
+# - List of all expanded abbreviations with their domains and confidence scores
+# - Original and expanded text for comparison
+# - Processing timestamp
+```
+
+**Configuration:**
+- `PROCESSING__ENABLE_ABBREVIATION_EXPANSION=true` (enabled by default)
+- `PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD=0.7`
+
+### 3. Chunking Phase
 Documents are split into manageable "chunks" using configurable strategies:
 - **Recursive**: Respects natural boundaries like paragraphs and sentences.
 - **Semantic**: Uses AI embeddings to find logical breaks in meaning.
 - **Fixed-Size**: Standard token-based windows with overlap.
 
-### 3. Context Enrichment Phase
+### 4. Context Enrichment Phase
 To solve the "lost in translation" problem in RAG, each chunk is optionally enriched with document-level context. This provides the LLM with the "big picture" for every small piece of text, significantly improving retrieval accuracy.
 
 ---
@@ -90,6 +139,7 @@ The system provides a comprehensive REST API for both document management and RA
 | **Upload** | `POST` | `/api/v1/documents/upload` | Upload PDF and start processing |
 | **Status** | `GET` | `/api/v1/documents/{id}/status` | Check extraction/chunking progress |
 | **Content** | `GET` | `/api/v1/documents/{id}/content` | Get full text (Text/JSON/Markdown) |
+| **Abbreviations** | `GET` | `/api/v1/documents/{id}/abbreviations` | Get abbreviation expansions |
 | **Chunks** | `GET` | `/api/v1/chunks/document/{id}` | Get all processed chunks for RAG |
 | **Delete** | `DELETE` | `/api/v1/documents/{id}` | Permanent deletion of all data |
 
@@ -97,10 +147,10 @@ The system provides a comprehensive REST API for both document management and RA
 
 ```bash
 # 1. Upload a document
-curl -X POST "http://localhost:8080/api/v1/documents/upload" -F "file=@report.pdf"
+curl -X POST "http://localhost:8088/api/v1/documents/upload" -F "file=@report.pdf"
 
 # 2. Get the chunks for your RAG application
-curl "http://localhost:8080/api/v1/chunks/document/{document_id}"
+curl "http://localhost:8088/api/v1/chunks/document/{document_id}"
 ```
 
 ---
@@ -138,16 +188,29 @@ The system is fully containerized for "one-command" deployment with multiple pro
 |---------|---------|----------|
 | Default | `docker compose up -d` | Core services only, uses fallback PDF processors |
 | CPU | `docker compose --profile cpu up -d` | MinerU with CPU pipeline backend |
-| GPU | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU + vLLM |
+| GPU | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU acceleration |
 | Mac Model Runner | `docker compose --profile mac-modelrunner up -d` | MinerU with Docker Model Runner |
 
+#### GPU Profile Details
+The GPU profile uses the `pipeline` backend with GPU-accelerated components:
+- DocLayout-YOLO for layout detection
+- PaddleOCR with GPU acceleration (109 languages)
+- Table structure recognition
+- Formula recognition (UniMERNet)
+
+Tested configurations:
+- RTX 3060 Ti (8GB VRAM) with `VLLM_GPU_MEMORY_UTILIZATION=0.85`
+- RTX 3090/4090 (24GB VRAM) with default settings
+
 ### Environment Configuration
-Key settings can be adjusted in `docker-compose.yml`:
+Key settings can be adjusted in `docker-compose.yml` or `docker-compose.gpu.yml`:
 - `PROCESSING__DEFAULT_CHUNKING_STRATEGY`: Default strategy (recursive/semantic).
 - `OPENAI_API_KEY`: Required for semantic chunking and enrichment.
-- `MINERU_API_URL`: MinerU service endpoint.
-- `MINERU_BACKEND`: Backend type (pipeline, vlm-http-client, vlm-vllm-engine).
+- `MINERU_API_URL`: MinerU service endpoint (default: `http://mineru-api:8080`).
+- `MINERU_API_ENABLED`: Enable/disable MinerU API (`true`/`false`).
+- `MINERU_BACKEND`: Backend type (pipeline, vlm-http-client, hybrid-http-client).
 - `MINERU_SERVER_URL`: VLM server URL for vlm-http-client backend.
+- `VLLM_GPU_MEMORY_UTILIZATION`: GPU memory usage (0.0-1.0, default 0.85 for 8GB cards).
 
 ### Mac-Specific Notes
 
@@ -159,6 +222,6 @@ Docker Desktop's Model Runner on macOS has limitations with vision/multimodal mo
 
 - **Individual Deletion**: Users can delete specific documents via the Web UI or API. This triggers a cascading delete across all databases (Metadata, Chunks, and Versions).
 - **CORS Enabled**: The API is open for integration with any external frontend or service.
-- **Interactive Docs**: Full API documentation is available at `http://localhost:8080/docs`.
+- **Interactive Docs**: Full API documentation is available at `http://localhost:8088/docs`.
 
 **The Brain MVP is designed to be the "intelligent bridge" between your raw documents and your AI applications.**

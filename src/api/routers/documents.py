@@ -30,11 +30,12 @@ from docforge.preprocessing.processor_factory import ProcessorFactory
 from docforge.postprocessing.router import PostProcessingRouter
 from docforge.storage.post_document_db import PostDocumentDatabase
 from docforge.storage.meta_document_db import MetaDocumentDatabase, MetaDocumentComponent
-from docforge.storage.schemas import StorageConfig, DocumentMetadata
+from docforge.storage.schemas import StorageConfig, DocumentMetadata, ProcessingStatus
 from docforge.rag.lightrag_integration import LightRAGIntegration
 from storage.chunk_storage import ChunkStorage
 from docforge.postprocessing.chunker import DocumentChunker
 from docforge.postprocessing.schemas import ChunkingStrategy
+from docforge.postprocessing.abbreviation_expander import AbbreviationExpander
 from config.config_manager import ConfigManager
 from utils.error_handling import handle_async_errors, ErrorCategory, ErrorSeverity
 from utils.token_counter import get_token_counter
@@ -135,6 +136,8 @@ async def get_config_manager() -> ConfigManager:
 
 # Background processing tasks storage (in production, use Redis or similar)
 processing_tasks: Dict[str, Dict[str, Any]] = {}
+# Abbreviation expansion data storage (keyed by document_id)
+abbreviation_data: Dict[str, Dict[str, Any]] = {}
 token_counter = get_token_counter()
 
 
@@ -600,9 +603,8 @@ async def get_document_content(
         
         # Get the source content from chunks
         source_content = ""
-        if doc.processing_versions:
-            latest_version = doc.get_latest_version()
-            if latest_version and latest_version.chunks:
+        latest_version = doc.get_latest_version() if doc.processing_versions else None
+        if latest_version and hasattr(latest_version, 'chunks') and latest_version.chunks:
                 # Reconstruct text from chunks
                 source_content = "\n\n".join([chunk.content for chunk in latest_version.chunks])
         
@@ -660,7 +662,7 @@ async def get_document_content(
                 },
                 "metadata": {
                     "processing_details": {
-                        "libraries_used": ["AdvancedPDFProcessor"],
+                        "libraries_used": [latest_version.processing_method if latest_version else "Unknown"],
                         "pages_processed": doc.metadata.page_count if doc.metadata and hasattr(doc.metadata, 'page_count') and doc.metadata.page_count else 1
                     }
                 }
@@ -672,6 +674,216 @@ async def get_document_content(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get content: {str(e)}")
+
+
+@router.get("/{document_id}/abbreviations")
+async def get_document_abbreviations(
+    document_id: str,
+    format: str = Query("json", description="Response format: json, markdown"),
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional)
+):
+    """
+    Get abbreviation expansions for a document.
+
+    Returns the list of abbreviations that were expanded during processing,
+    along with their expanded forms.
+
+    - **document_id**: Document UUID
+    - **format**: Response format (json, markdown)
+    """
+    try:
+        # Check if we have abbreviation data for this document (in-memory first)
+        data = abbreviation_data.get(document_id)
+
+        # If not in memory, try loading from database
+        if not data:
+            from storage.chunk_storage import ChunkStorage
+            chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
+            data = chunk_storage.get_abbreviation_data(document_id)
+
+            # Cache in memory for future requests
+            if data:
+                abbreviation_data[document_id] = data
+
+        if not data:
+            # Return empty response if no abbreviations were expanded
+            if format == "markdown":
+                return {
+                    "document_id": document_id,
+                    "markdown": "# Abbreviation Expansions\n\nNo abbreviations were expanded for this document.",
+                    "expansion_count": 0
+                }
+            return {
+                "document_id": document_id,
+                "expansion_count": 0,
+                "expansions": [],
+                "message": "No abbreviation data available for this document"
+            }
+
+        if format == "markdown":
+            # Generate markdown report
+            md_lines = [
+                f"# Abbreviation Expansions Report",
+                f"",
+                f"**Document:** {data.get('filename', 'Unknown')}",
+                f"**Document ID:** {document_id}",
+                f"**Processed At:** {data.get('processed_at', 'Unknown')}",
+                f"**Total Expansions:** {data.get('expansion_count', 0)}",
+                f"",
+                "---",
+                "",
+                "## Abbreviations Found",
+                ""
+            ]
+
+            expansions = data.get('expansions', [])
+            if expansions:
+                md_lines.append("| Abbreviation | Expansion | Domain | Confidence |")
+                md_lines.append("|--------------|-----------|--------|------------|")
+                for exp in expansions:
+                    conf_pct = f"{exp.get('confidence', 0) * 100:.0f}%"
+                    md_lines.append(f"| {exp.get('abbreviation', '')} | {exp.get('expansion', '')} | {exp.get('domain', 'general')} | {conf_pct} |")
+            else:
+                md_lines.append("*No abbreviations were expanded.*")
+
+            md_lines.extend([
+                "",
+                "---",
+                "",
+                "## Expanded Text Preview",
+                "",
+                "```",
+                (data.get('expanded_text', '')[:2000] + "..." if len(data.get('expanded_text', '')) > 2000 else data.get('expanded_text', '')),
+                "```"
+            ])
+
+            return {
+                "document_id": document_id,
+                "filename": data.get('filename'),
+                "markdown": "\n".join(md_lines),
+                "expansion_count": data.get('expansion_count', 0)
+            }
+
+        # Return JSON format
+        return {
+            "document_id": document_id,
+            "filename": data.get('filename'),
+            "expansion_count": data.get('expansion_count', 0),
+            "expansions": data.get('expansions', []),
+            "processed_at": data.get('processed_at'),
+            "has_expanded_text": bool(data.get('expanded_text'))
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting abbreviation data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get abbreviation data: {str(e)}")
+
+
+@router.get("/{document_id}/abbreviations/download")
+async def download_abbreviation_report(
+    document_id: str,
+    include_full_text: bool = Query(False, description="Include full expanded text in download"),
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional)
+):
+    """
+    Download abbreviation expansion report as markdown file.
+
+    - **document_id**: Document UUID
+    - **include_full_text**: Whether to include the full expanded text
+    """
+    try:
+        # Check in-memory first, then database
+        data = abbreviation_data.get(document_id)
+
+        if not data:
+            from storage.chunk_storage import ChunkStorage
+            chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
+            data = chunk_storage.get_abbreviation_data(document_id)
+
+            if data:
+                abbreviation_data[document_id] = data
+
+        if not data:
+            raise HTTPException(status_code=404, detail="No abbreviation data found for this document")
+
+        filename = data.get('filename', 'document')
+
+        # Generate comprehensive markdown report
+        md_lines = [
+            f"# Abbreviation Expansions Report",
+            f"",
+            f"**Document:** {filename}",
+            f"**Document ID:** {document_id}",
+            f"**Processed At:** {data.get('processed_at', 'Unknown')}",
+            f"**Total Expansions:** {data.get('expansion_count', 0)}",
+            f"",
+            "---",
+            "",
+            "## Summary",
+            "",
+            f"This document contained **{data.get('expansion_count', 0)}** abbreviations that were expanded to improve RAG retrieval accuracy.",
+            "",
+            "---",
+            "",
+            "## Abbreviations Expanded",
+            ""
+        ]
+
+        expansions = data.get('expansions', [])
+        if expansions:
+            md_lines.append("| # | Abbreviation | Full Form | Domain | Confidence |")
+            md_lines.append("|---|--------------|-----------|--------|------------|")
+            for i, exp in enumerate(expansions, 1):
+                conf_pct = f"{exp.get('confidence', 0) * 100:.0f}%"
+                md_lines.append(f"| {i} | **{exp.get('abbreviation', '')}** | {exp.get('expansion', '')} | {exp.get('domain', 'general')} | {conf_pct} |")
+
+            # Add glossary section
+            md_lines.extend([
+                "",
+                "---",
+                "",
+                "## Glossary",
+                ""
+            ])
+            for exp in expansions:
+                md_lines.append(f"- **{exp.get('abbreviation', '')}**: {exp.get('expansion', '')}")
+        else:
+            md_lines.append("*No abbreviations were expanded in this document.*")
+
+        if include_full_text and data.get('expanded_text'):
+            md_lines.extend([
+                "",
+                "---",
+                "",
+                "## Full Expanded Text",
+                "",
+                data.get('expanded_text', '')
+            ])
+
+        md_lines.extend([
+            "",
+            "---",
+            "",
+            f"*Generated by Brain MVP - Advanced Document Processing System*"
+        ])
+
+        markdown_content = "\n".join(md_lines)
+
+        # Return as downloadable file
+        from fastapi.responses import Response
+        return Response(
+            content=markdown_content,
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}_abbreviations.md"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading abbreviation report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download report: {str(e)}")
 
 
 @router.get("/{document_id}/download")
@@ -1244,13 +1456,13 @@ async def process_document_async(
         version_number = version_info.version_number
         
         # Process document
-        print(f"DEBUG: Starting processing for {filename}", flush=True)
+        print(f"DEBUG: Starting processing for {filename} using {processor.processor_name}", flush=True)
         result = processor.process_document(
             filename=filename,
             file_path=version_info.file_path,
             file_content=None  # Read from path
         )
-        print(f"DEBUG: Processing complete for {filename}", flush=True)
+        print(f"DEBUG: Processing complete for {filename}, processor used: {result.output.processing_metadata.processor_name if result.output and result.output.processing_metadata else 'unknown'}", flush=True)
         
         # Update status
         processing_tasks[task_id].update({
@@ -1274,9 +1486,24 @@ async def process_document_async(
         )
         logger.info(f"Stored processed document: {post_doc_id}")
         print(f"DEBUG: Stored processed document: {post_doc_id}", flush=True)
-        
+
         # Generate set_uuid
-        set_uuid = task_id 
+        set_uuid = task_id
+
+        # Store processing version with processor name
+        processor_name = result.output.processing_metadata.processor_name if result.output and result.output.processing_metadata else processor.processor_name
+        processing_duration = result.output.processing_metadata.processing_duration if result.output and result.output.processing_metadata else 0.0
+        post_db.add_processing_version(
+            doc_uuid=document_id,
+            set_uuid=set_uuid,
+            processing_method=processor_name,
+            processing_config={},
+            processor_version=getattr(processor, 'processor_version', '1.0.0'),
+            processing_duration=processing_duration,
+            chunks=[],  # Chunks will be stored separately
+            status=ProcessingStatus.COMPLETED
+        )
+        print(f"DEBUG: Stored processing version with method: {processor_name}", flush=True) 
         
         # Convert content elements to components
         components = []
@@ -1315,11 +1542,13 @@ async def process_document_async(
         print(f"DEBUG: Woke up", flush=True)
 
         try:
+            print(f"DEBUG: Entering chunking try block", flush=True)
             # Chunking (Stage 3.5)
             processing_tasks[task_id].update({
                 'stage': 'chunking',
                 'progress': 80.0
             })
+            print(f"DEBUG: Updated processing task to chunking stage", flush=True)
             
             # Get chunking configuration
             import os
@@ -1353,16 +1582,93 @@ async def process_document_async(
                         'context_max_words': int(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_MAX_WORDS', 100)),
                         'context_temperature': float(os.getenv('PROCESSING__CONTEXT_ENRICHMENT_TEMPERATURE', 0.3))
                     })
-            
+
+            # Abbreviation expansion (before chunking for better RAG accuracy)
+            print(f"DEBUG: Starting abbreviation expansion setup", flush=True)
+            document_for_chunking = result.output
+            abbreviation_expansions = []
+
+            abbrev_enabled = os.getenv('PROCESSING__ENABLE_ABBREVIATION_EXPANSION', 'true').lower() == 'true'
+            print(f"DEBUG: Abbreviation expansion enabled: {abbrev_enabled}", flush=True)
+
+            if abbrev_enabled:
+                try:
+                    logger.info(f"Expanding abbreviations in document {document_id}")
+                    print(f"DEBUG: Creating AbbreviationExpander", flush=True)
+                    expander = AbbreviationExpander()
+                    print(f"DEBUG: AbbreviationExpander created", flush=True)
+
+                    # Get domains from routing decision if available, otherwise use defaults
+                    domains = config.abbreviation_domains if config else ['general', 'technical', 'academic']
+                    confidence_threshold = float(os.getenv('PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD', '0.7'))
+
+                    print(f"DEBUG: Calling expand_abbreviations with domains={domains}", flush=True)
+                    expanded_document, abbreviation_expansions = expander.expand_abbreviations(
+                        document=result.output,
+                        domains=domains,
+                        confidence_threshold=confidence_threshold
+                    )
+                    print(f"DEBUG: expand_abbreviations returned {len(abbreviation_expansions)} expansions", flush=True)
+
+                    document_for_chunking = expanded_document
+                    print(f"DEBUG: document_for_chunking.plain_text length: {len(document_for_chunking.plain_text) if document_for_chunking.plain_text else 0}", flush=True)
+                    logger.info(f"Expanded {len(abbreviation_expansions)} abbreviations in document {document_id}")
+
+                    # Store abbreviation data for later retrieval (in-memory cache)
+                    expansions_list = [
+                        {
+                            'abbreviation': exp.abbreviation,
+                            'expansion': exp.expansion,
+                            'domain': exp.domain,
+                            'confidence': exp.confidence
+                        }
+                        for exp in abbreviation_expansions
+                    ]
+
+                    abbreviation_data[document_id] = {
+                        'document_id': document_id,
+                        'filename': filename,
+                        'expansion_count': len(abbreviation_expansions),
+                        'expansions': expansions_list,
+                        'expanded_text': expanded_document.plain_text,
+                        'original_text': result.output.plain_text,
+                        'processed_at': datetime.utcnow().isoformat()
+                    }
+
+                    # Also persist to database for durability
+                    try:
+                        # Use already initialized chunk_storage
+                        chunk_storage.store_abbreviation_data(
+                            doc_uuid=document_id,
+                            filename=filename,
+                            expansions=expansions_list,
+                            expanded_text=expanded_document.plain_text,
+                            original_text=result.output.plain_text
+                        )
+                    except Exception as storage_error:
+                        logger.warning(f"Failed to persist abbreviation data: {storage_error}")
+
+                except Exception as abbrev_error:
+                    logger.warning(f"Abbreviation expansion failed, continuing without expansion: {abbrev_error}")
+                    # Continue with original document if expansion fails
+
             # Perform chunking
+            print(f"DEBUG: About to perform chunking with strategy {strategy_name}", flush=True)
+            print(f"DEBUG: document_for_chunking type: {type(document_for_chunking)}", flush=True)
+            print(f"DEBUG: document_for_chunking.plain_text: {document_for_chunking.plain_text[:200] if document_for_chunking.plain_text else 'None'}...", flush=True)
             logger.info(f"Chunking document {document_id} with strategy {strategy_name}")
-            
+
+            print(f"DEBUG: Creating DocumentChunker", flush=True)
             chunker = DocumentChunker(strategy=strategy, config=chunker_config)
-            chunks = chunker.chunk_document(result.output)
-            
+            print(f"DEBUG: DocumentChunker created, calling chunk_document", flush=True)
+            chunks = chunker.chunk_document(document_for_chunking)
+            print(f"DEBUG: chunk_document returned {len(chunks)} chunks", flush=True)
+
             logger.info(f"Generated {len(chunks)} chunks")
         except Exception as e:
-            print(f"DEBUG: CRASH CAUGHT: {e}", file=sys.stderr, flush=True)
+            print(f"DEBUG: CRASH CAUGHT in chunking: {e}", file=sys.stderr, flush=True)
+            import traceback
+            print(f"DEBUG: TRACEBACK: {traceback.format_exc()}", file=sys.stderr, flush=True)
             logger.error(f"CRASH CAUGHT: {e}")
             raise
         
@@ -1413,7 +1719,9 @@ async def process_document_async(
                 'doc_uuid': document_id,
                 'version_number': version_number,
                 'chunking_strategy': strategy_name.lower(),
-                'processed_at': datetime.utcnow().isoformat()
+                'processed_at': datetime.utcnow().isoformat(),
+                'abbreviation_expansion_enabled': len(abbreviation_expansions) > 0,
+                'abbreviations_expanded': len(abbreviation_expansions)
             })
             
             if enriched_content:

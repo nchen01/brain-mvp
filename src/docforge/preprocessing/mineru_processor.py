@@ -75,9 +75,10 @@ class MinerUProcessor(BaseDocumentProcessor):
         self.output_dir = self.config.get("output_dir", "./data/mineru_output")
 
         # Backend configuration (pipeline, vlm-http-client, vlm-vllm-engine, etc.)
+        # If MINERU_BACKEND is empty or not set, don't send backend in request (let API use its default)
         self.backend = self.config.get(
             "backend",
-            os.environ.get("MINERU_BACKEND", "pipeline")
+            os.environ.get("MINERU_BACKEND", "")
         )
 
         # VLM server URL (for vlm-http-client and hybrid-http-client backends)
@@ -251,19 +252,26 @@ class MinerUProcessor(BaseDocumentProcessor):
 
                 # Build form data for MinerU API
                 data = {
-                    "backend": self.backend,  # Use configured backend (pipeline, vlm-http-client, etc.)
                     "table_enable": str(self.extract_tables).lower(),
                     "return_md": "true",
                     "return_content_list": "true",
                     "return_images": str(self.extract_images).lower(),
                 }
 
+                # Only send backend if explicitly configured (non-empty)
+                # This avoids "multiple values for keyword argument 'backend'" when
+                # MinerU API already has backend set via CLI (e.g., GPU mode)
+                if self.backend:
+                    data["backend"] = self.backend
+
                 # Add server_url for vlm-http-client and hybrid-http-client backends
                 if self.backend in ("vlm-http-client", "hybrid-http-client") and self.vlm_http_url:
                     data["server_url"] = self.vlm_http_url
                     logger.info(f"MinerU API request - backend: {self.backend}, server_url: {self.vlm_http_url}")
-                else:
+                elif self.backend:
                     logger.info(f"MinerU API request - backend: {self.backend}")
+                else:
+                    logger.info("MinerU API request - using API default backend")
 
                 # Set language if specified
                 if self.language != "auto":

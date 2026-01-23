@@ -62,12 +62,31 @@ The system uses a comprehensive schema to track document lineage and processing 
    ```
 
 4. **Access the Interface**:
-   - **Web UI**: [http://localhost:8080](http://localhost:8080)
-   - **API Docs (Swagger)**: [http://localhost:8080/docs](http://localhost:8080/docs)
+   - **Web UI**: [http://localhost:8088](http://localhost:8088)
+   - **API Docs (Swagger)**: [http://localhost:8088/docs](http://localhost:8088/docs)
 
 ---
 
 ## 🧠 Advanced RAG Capabilities
+
+### Abbreviation Expansion
+Before chunking, the system expands abbreviations and acronyms inline (e.g., "API" becomes "API (Application Programming Interface)") to improve RAG retrieval accuracy. This ensures that when users search for either the abbreviation or the full term, relevant chunks are retrieved.
+
+**Features:**
+- **Domain-Aware Detection**: Recognizes abbreviations from technical, academic, business, medical, and general domains
+- **Confidence-Based Expansion**: Only expands abbreviations above a configurable confidence threshold (default: 0.7)
+- **Inline Expansion**: Preserves the original abbreviation while adding the expansion in parentheses
+- **Persistence**: Expansion data is stored and retrievable via API
+
+**API Endpoint:**
+```bash
+# Get abbreviation expansions for a document
+curl "http://localhost:8088/api/v1/documents/{document_id}/abbreviations"
+```
+
+**Configuration:**
+- `PROCESSING__ENABLE_ABBREVIATION_EXPANSION=true` (enabled by default)
+- `PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD=0.7`
 
 ### Chunking Strategies
 The system supports three primary chunking strategies to optimize for different RAG use cases:
@@ -88,9 +107,11 @@ The system is composed of multiple services with different deployment profiles:
 
 | Service | Container Name | Port | Description |
 |---------|----------------|------|-------------|
-| **App** | `brain-mvp-app` | 8080 | FastAPI application & PDF processing engine |
+| **App** | `brain-mvp-app` | 8088 | FastAPI application & PDF processing engine |
 | **Postgres** | `brain-mvp-postgres` | 5433 | Primary database for document metadata & chunks |
 | **Redis** | `brain-mvp-redis` | 6380 | Cache for background tasks and session management |
+| **MinerU API** | `mineru-api` | 8001 | MinerU PDF processing service (GPU/CPU profiles) |
+| **MinerU Gradio** | `mineru-gradio` | 7860 | MinerU web interface (GPU profile only) |
 
 ### MinerU Profiles
 
@@ -98,8 +119,14 @@ The system is composed of multiple services with different deployment profiles:
 |---------|---------|-------------|
 | **Default** | `docker compose up -d` | Core services only (uses fallback PDF processor) |
 | **CPU** | `docker compose --profile cpu up -d` | MinerU with CPU-based pipeline backend |
-| **GPU** | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU acceleration (vLLM) |
+| **GPU** | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up -d` | MinerU with NVIDIA GPU acceleration |
 | **Mac Model Runner** | `docker compose --profile mac-modelrunner up -d` | MinerU with Docker Model Runner VLM backend |
+
+#### GPU Profile Requirements
+- NVIDIA GPU with compute capability 8.0+ (Ampere/Ada/Hopper architecture)
+- NVIDIA Container Toolkit installed
+- Tested with RTX 3060 Ti (8GB VRAM), RTX 3090, RTX 4090
+- Uses `pipeline` backend for reliable processing with GPU-accelerated OCR and layout detection
 
 ### Useful Commands
 ```bash
@@ -130,8 +157,9 @@ docker compose --profile cpu up -d
 | `GET` | `/api/v1/documents/` | List all uploaded documents |
 | `GET` | `/api/v1/documents/{id}/status` | Check processing progress |
 | `GET` | `/api/v1/documents/{id}/content` | Retrieve extracted text/JSON/Markdown |
+| `GET` | `/api/v1/documents/{id}/abbreviations` | Get abbreviation expansions for a document |
 | `DELETE` | `/api/v1/documents/{id}` | Permanently delete a document and its chunks |
-| `GET` | `/chunks/document/{id}` | Retrieve all chunks for a document |
+| `GET` | `/api/v1/chunks/document/{id}` | Retrieve all chunks for a document |
 
 ---
 

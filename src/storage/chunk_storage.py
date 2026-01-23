@@ -354,3 +354,148 @@ class ChunkStorage:
             return {'total_chunks': 0, 'by_strategy': {}, 'enriched_chunks': 0}
         finally:
             conn.close()
+
+    # ===== Abbreviation Storage Methods =====
+
+    def _ensure_abbreviation_table(self):
+        """Ensure abbreviation_expansions table exists."""
+        conn = self._get_connection()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS abbreviation_expansions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_uuid TEXT NOT NULL UNIQUE,
+                    filename TEXT,
+                    expansion_count INTEGER DEFAULT 0,
+                    expansions_json TEXT,
+                    expanded_text TEXT,
+                    original_text TEXT,
+                    processed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_abbrev_doc_uuid ON abbreviation_expansions(doc_uuid)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def store_abbreviation_data(
+        self,
+        doc_uuid: str,
+        filename: str,
+        expansions: list,
+        expanded_text: str,
+        original_text: str
+    ) -> bool:
+        """Store abbreviation expansion data for a document.
+
+        Args:
+            doc_uuid: Document UUID
+            filename: Original filename
+            expansions: List of expansion dictionaries
+            expanded_text: Text with abbreviations expanded
+            original_text: Original text before expansion
+
+        Returns:
+            True if stored successfully
+        """
+        self._ensure_abbreviation_table()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Delete existing data for this document
+            cursor.execute("DELETE FROM abbreviation_expansions WHERE doc_uuid = ?", (doc_uuid,))
+
+            # Insert new data
+            cursor.execute("""
+                INSERT INTO abbreviation_expansions (
+                    doc_uuid, filename, expansion_count, expansions_json,
+                    expanded_text, original_text, processed_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                doc_uuid,
+                filename,
+                len(expansions),
+                json.dumps(expansions),
+                expanded_text,
+                original_text,
+                datetime.now().isoformat(),
+                datetime.now().isoformat()
+            ))
+
+            conn.commit()
+            logger.info(f"Stored {len(expansions)} abbreviation expansions for document {doc_uuid}")
+            return True
+
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error(f"Error storing abbreviation data: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_abbreviation_data(self, doc_uuid: str) -> Optional[Dict[str, Any]]:
+        """Retrieve abbreviation expansion data for a document.
+
+        Args:
+            doc_uuid: Document UUID
+
+        Returns:
+            Dictionary with abbreviation data or None if not found
+        """
+        self._ensure_abbreviation_table()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT * FROM abbreviation_expansions
+                WHERE doc_uuid = ?
+            """, (doc_uuid,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return {
+                'document_id': row['doc_uuid'],
+                'filename': row['filename'],
+                'expansion_count': row['expansion_count'],
+                'expansions': json.loads(row['expansions_json']) if row['expansions_json'] else [],
+                'expanded_text': row['expanded_text'],
+                'original_text': row['original_text'],
+                'processed_at': row['processed_at']
+            }
+
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving abbreviation data: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def delete_abbreviation_data(self, doc_uuid: str) -> bool:
+        """Delete abbreviation data for a document.
+
+        Args:
+            doc_uuid: Document UUID
+
+        Returns:
+            True if deleted successfully
+        """
+        self._ensure_abbreviation_table()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM abbreviation_expansions WHERE doc_uuid = ?", (doc_uuid,))
+            conn.commit()
+            logger.info(f"Deleted abbreviation data for document {doc_uuid}")
+            return True
+
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error(f"Error deleting abbreviation data: {e}")
+            return False
+        finally:
+            conn.close()

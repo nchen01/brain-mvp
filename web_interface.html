@@ -526,6 +526,138 @@
             transform: translateY(-2px);
             box-shadow: 0 5px 10px rgba(255, 107, 107, 0.4);
         }
+
+        /* Abbreviations Table */
+        .abbreviations-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .abbreviations-table th,
+        .abbreviations-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .abbreviations-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+
+        .abbreviations-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .abbreviations-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .abbrev-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            font-weight: 600;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .abbrev-expansion {
+            color: #495057;
+        }
+
+        .domain-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            text-transform: uppercase;
+        }
+
+        .domain-technical {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .domain-academic {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .domain-business {
+            background: #fce4ec;
+            color: #c2185b;
+        }
+
+        .domain-general {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .confidence-bar {
+            width: 60px;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 3px;
+        }
+
+        .no-abbreviations {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .no-abbreviations-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .abbreviations-summary {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .summary-item {
+            text-align: center;
+        }
+
+        .summary-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #1976d2;
+        }
+
+        .summary-label {
+            font-size: 0.85em;
+            color: #546e7a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 
@@ -593,6 +725,7 @@
                     <div class="tabs">
                         <button class="tab-button active" onclick="switchTab('extraction')">Extraction</button>
                         <button class="tab-button" onclick="switchTab('chunks')">Chunks</button>
+                        <button class="tab-button" onclick="switchTab('abbreviations')">Abbreviations</button>
                     </div>
 
                     <!-- Extraction View -->
@@ -630,6 +763,32 @@
                             <div style="text-align: center; padding: 20px; color: #6c757d;">
                                 Loading chunks...
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Abbreviations View -->
+                    <div id="abbreviationsView" class="tab-content">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4>📝 Abbreviation Expansions</h4>
+                            <div id="abbrevStats" style="font-size: 0.9em; color: #6c757d;"></div>
+                        </div>
+
+                        <div id="abbreviationsContent">
+                            <div style="text-align: center; padding: 20px; color: #6c757d;">
+                                Loading abbreviations...
+                            </div>
+                        </div>
+
+                        <div class="download-buttons" id="abbrevDownloadButtons" style="display: none; margin-top: 20px;">
+                            <button class="download-button" onclick="downloadAbbreviations('json')">
+                                📊 Download JSON
+                            </button>
+                            <button class="download-button" onclick="downloadAbbreviations('markdown')">
+                                📝 Download Markdown
+                            </button>
+                            <button class="download-button" onclick="downloadAbbreviations('full')">
+                                📄 Download Full Report
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1143,10 +1302,195 @@
             });
             document.getElementById(`${tabName}View`).classList.add('active');
 
-            // Load chunks if switching to chunks tab
-            if (tabName === 'chunks' && currentDocumentId) {
-                loadChunks();
+            // Load data based on tab
+            if (currentDocumentId) {
+                if (tabName === 'chunks') {
+                    loadChunks();
+                } else if (tabName === 'abbreviations') {
+                    loadAbbreviations();
+                }
             }
+        }
+
+        // Abbreviation Handling
+        async function loadAbbreviations() {
+            const abbreviationsContent = document.getElementById('abbreviationsContent');
+            const abbrevStats = document.getElementById('abbrevStats');
+            const abbrevDownloadButtons = document.getElementById('abbrevDownloadButtons');
+
+            try {
+                const response = await fetch(`/api/v1/documents/${currentDocumentId}/abbreviations`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        abbreviationsContent.innerHTML = `
+                            <div class="no-abbreviations">
+                                <div class="no-abbreviations-icon">📝</div>
+                                <h4>No Abbreviation Data</h4>
+                                <p>Abbreviation expansion data is not available for this document.</p>
+                                <p style="font-size: 0.9em; margin-top: 10px;">This may happen if the document was processed before abbreviation expansion was enabled.</p>
+                            </div>
+                        `;
+                        if (abbrevDownloadButtons) abbrevDownloadButtons.style.display = 'none';
+                        return;
+                    }
+                    throw new Error(`Failed to load abbreviations: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Update stats
+                if (abbrevStats) {
+                    abbrevStats.textContent = `${data.expansion_count || 0} abbreviations expanded`;
+                }
+
+                // Handle no expansions
+                if (!data.expansions || data.expansions.length === 0) {
+                    abbreviationsContent.innerHTML = `
+                        <div class="no-abbreviations">
+                            <div class="no-abbreviations-icon">✅</div>
+                            <h4>No Abbreviations Found</h4>
+                            <p>This document did not contain any abbreviations that needed expansion.</p>
+                        </div>
+                    `;
+                    if (abbrevDownloadButtons) abbrevDownloadButtons.style.display = 'none';
+                    return;
+                }
+
+                // Count domains
+                const domainCounts = {};
+                data.expansions.forEach(exp => {
+                    const domain = exp.domain || 'general';
+                    domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+                });
+
+                // Build summary
+                let summaryHtml = `
+                    <div class="abbreviations-summary">
+                        <div class="summary-item">
+                            <div class="summary-value">${data.expansion_count}</div>
+                            <div class="summary-label">Total Expanded</div>
+                        </div>
+                `;
+
+                Object.entries(domainCounts).forEach(([domain, count]) => {
+                    summaryHtml += `
+                        <div class="summary-item">
+                            <div class="summary-value">${count}</div>
+                            <div class="summary-label">${domain}</div>
+                        </div>
+                    `;
+                });
+
+                summaryHtml += '</div>';
+
+                // Build table
+                let tableHtml = `
+                    <table class="abbreviations-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Abbreviation</th>
+                                <th>Expansion</th>
+                                <th>Domain</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.expansions.forEach((exp, index) => {
+                    const confidencePercent = Math.round((exp.confidence || 0) * 100);
+                    const domain = exp.domain || 'general';
+
+                    tableHtml += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td><span class="abbrev-badge">${escapeHtml(exp.abbreviation)}</span></td>
+                            <td class="abbrev-expansion">${escapeHtml(exp.expansion)}</td>
+                            <td><span class="domain-badge domain-${domain}">${domain}</span></td>
+                            <td>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" style="width: ${confidencePercent}%"></div>
+                                </div>
+                                ${confidencePercent}%
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += '</tbody></table>';
+
+                abbreviationsContent.innerHTML = summaryHtml + tableHtml;
+
+                // Show download buttons
+                if (abbrevDownloadButtons) abbrevDownloadButtons.style.display = 'flex';
+
+            } catch (error) {
+                console.error('Error loading abbreviations:', error);
+                abbreviationsContent.innerHTML = `<div class="error-message">Failed to load abbreviations: ${error.message}</div>`;
+            }
+        }
+
+        async function downloadAbbreviations(type) {
+            if (!currentDocumentId) return;
+
+            try {
+                let url, filename, mimeType, content;
+
+                if (type === 'json') {
+                    const response = await fetch(`/api/v1/documents/${currentDocumentId}/abbreviations?format=json`);
+                    const data = await response.json();
+                    content = JSON.stringify(data, null, 2);
+                    filename = `${data.filename || 'document'}_abbreviations.json`;
+                    mimeType = 'application/json';
+                } else if (type === 'markdown') {
+                    const response = await fetch(`/api/v1/documents/${currentDocumentId}/abbreviations?format=markdown`);
+                    const data = await response.json();
+                    content = data.markdown;
+                    filename = `${data.filename || 'document'}_abbreviations.md`;
+                    mimeType = 'text/markdown';
+                } else if (type === 'full') {
+                    // Download full report with expanded text
+                    const response = await fetch(`/api/v1/documents/${currentDocumentId}/abbreviations/download?include_full_text=true`);
+                    if (!response.ok) throw new Error('Download failed');
+
+                    const blob = await response.blob();
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    filename = contentDisposition
+                        ? contentDisposition.split('filename=')[1]
+                        : 'abbreviations_report.md';
+
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                    return;
+                }
+
+                // Create and trigger download for JSON/Markdown
+                const blob = new Blob([content], { type: mimeType });
+                const downloadUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+
+            } catch (error) {
+                showError(`Download failed: ${error.message}`);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Chunk Handling
