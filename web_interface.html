@@ -789,6 +789,9 @@
                             <button class="download-button" onclick="downloadAbbreviations('full')">
                                 📄 Download Full Report
                             </button>
+                            <button class="download-button" onclick="downloadAbbreviations('comparison')" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">
+                                🔄 Download Comparison (Pre/Post)
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1459,6 +1462,26 @@
                     filename = contentDisposition
                         ? contentDisposition.split('filename=')[1]
                         : 'abbreviations_report.md';
+
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                    return;
+                } else if (type === 'comparison') {
+                    // Download comparison report with pre and post expansion text
+                    const response = await fetch(`/api/v1/documents/${currentDocumentId}/abbreviations/download?include_comparison=true`);
+                    if (!response.ok) throw new Error('Download failed');
+
+                    const blob = await response.blob();
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    filename = contentDisposition
+                        ? contentDisposition.split('filename=')[1].replace('.md', '_comparison.md')
+                        : 'abbreviations_comparison.md';
 
                     const downloadUrl = URL.createObjectURL(blob);
                     const a = document.createElement('a');

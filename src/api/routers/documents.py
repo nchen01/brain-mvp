@@ -783,6 +783,7 @@ async def get_document_abbreviations(
 async def download_abbreviation_report(
     document_id: str,
     include_full_text: bool = Query(False, description="Include full expanded text in download"),
+    include_comparison: bool = Query(False, description="Include side-by-side comparison of original vs expanded text"),
     current_user: Optional[UserInfo] = Depends(get_current_user_optional)
 ):
     """
@@ -790,6 +791,7 @@ async def download_abbreviation_report(
 
     - **document_id**: Document UUID
     - **include_full_text**: Whether to include the full expanded text
+    - **include_comparison**: Whether to include pre/post expansion comparison
     """
     try:
         # Check in-memory first, then database
@@ -850,7 +852,30 @@ async def download_abbreviation_report(
         else:
             md_lines.append("*No abbreviations were expanded in this document.*")
 
-        if include_full_text and data.get('expanded_text'):
+        if include_comparison:
+            original_text = data.get('original_text', '')
+            expanded_text = data.get('expanded_text', '')
+
+            md_lines.extend([
+                "",
+                "---",
+                "",
+                "## Text Comparison: Before vs After Abbreviation Expansion",
+                "",
+                "### Original Text (Before Expansion)",
+                "",
+                "```",
+                original_text if original_text else "*No original text stored*",
+                "```",
+                "",
+                "### Expanded Text (After Expansion)",
+                "",
+                "```",
+                expanded_text if expanded_text else "*No expanded text stored*",
+                "```",
+                ""
+            ])
+        elif include_full_text and data.get('expanded_text'):
             md_lines.extend([
                 "",
                 "---",
