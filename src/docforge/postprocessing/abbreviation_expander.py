@@ -282,15 +282,18 @@ class AbbreviationDetector:
         self.abbreviation_patterns = [
             # Standard abbreviation pattern (2-5 uppercase letters)
             re.compile(r'\b[A-Z]{2,5}\b'),
-            
+
             # Abbreviation with periods (e.g., U.S.A.)
             re.compile(r'\b[A-Z](?:\.[A-Z])+\.?\b'),
-            
-            # Mixed case abbreviations (e.g., PhD, MSc, BSc)
+
+            # Mixed case abbreviations (e.g., PhD, MSc, BSc, IoT)
             re.compile(r'\b[A-Z][a-z]*[A-Z][a-z]*\b'),
-            
+
             # Academic degrees (e.g., PhD, MSc, BSc)
             re.compile(r'\b[A-Z][a-z]?[A-Z]\b'),
+
+            # Abbreviations with ampersand (e.g., O&M, R&D, M&A)
+            re.compile(r'\b[A-Z]&[A-Z]\b'),
         ]
         
         # Common words that look like abbreviations but aren't
@@ -378,13 +381,262 @@ class AbbreviationDetector:
 
 class AbbreviationExpander:
     """Main abbreviation expansion system."""
-    
+
     def __init__(self, db_path: Optional[str] = None):
         """Initialize the abbreviation expander."""
         self.database = AbbreviationDatabase(db_path)
         self.detector = AbbreviationDetector()
         self.expansion_cache: Dict[str, str] = {}
-    
+        # Track abbreviation definitions found in the current document
+        self._document_definitions: Dict[str, str] = {}
+
+    def _pre_scan_document(self, document: StandardizedDocumentOutput) -> List[AbbreviationMapping]:
+        """
+        Pre-scan the document for inline abbreviation definitions.
+
+        Detects both common academic patterns:
+          - "ABBREV (Full Form)" - e.g., "PSC (perovskite solar cells)" [Primary]
+          - "Full Form (ABBREV)" - e.g., "perovskite solar cells (PSC)" [Secondary]
+
+        Pattern 1 (ABBREV followed by parenthesized expansion) is run first because
+        it is more reliable - the expansion text is explicitly in the parentheses.
+        Pattern 2 (backwards matching) is only used for abbreviations not found by Pattern 1.
+
+        First occurrence wins: once a definition is found for an abbreviation, later
+        occurrences are ignored to prefer the original definition site.
+
+        Returns:
+            List of discovered AbbreviationMapping objects
+        """
+        self._document_definitions = {}
+        discovered = []
+        text = document.plain_text or ""
+
+        if not text:
+            return discovered
+
+        # === Pattern 1 (Primary): ABBREV (full form) ===
+        # Most reliable: expansion is explicitly in parentheses after the abbreviation.
+        # Examples: "PSC (perovskite solar cells)", "PL (photoluminescence)"
+        # We accept expansions based on positional evidence without requiring strict
+        # initials matching, since many scientific abbreviations (VOC, JSC) don't
+        # follow standard initial-letter conventions.
+        patterns_abbrev_then_full = [
+            # Standard: all uppercase (e.g., PSC, API, FAIR)
+            re.compile(r'\b([A-Z][A-Z0-9]{1,9})\s*\(([^)]{3,80})\)'),
+            # Mixed case: e.g., IoT, PhD, eBay
+            re.compile(r'\b([A-Z][a-z]*[A-Z][a-z]*)\s*\(([^)]{3,80})\)'),
+            # With ampersand: e.g., O&M, R&D, M&A
+            re.compile(r'\b([A-Z]&[A-Z])\s*;?\s*\(([^)]{3,80})\)'),
+        ]
+
+        for pattern in patterns_abbrev_then_full:
+            for match in pattern.finditer(text):
+                abbrev = match.group(1)
+                paren_content = match.group(2).strip()
+
+                if abbrev.upper() in self._document_definitions:
+                    continue  # First occurrence wins
+
+                # Skip if the parenthesized content is all uppercase (likely another abbreviation)
+                if paren_content.isupper():
+                    continue
+
+                # Skip if parenthesized content looks like a citation, reference, or number
+                if re.match(r'^[\d]', paren_content):
+                    continue
+                if paren_content.lower().startswith(('see ', 'cf.', 'fig.', 'eq.', 'ref.')):
+                    continue
+
+                # Accept the expansion if the content looks like a definition:
+                words = paren_content.split()
+                is_likely_expansion = False
+                confidence = 0.85
+
+                if len(words) >= 2 and not paren_content.isupper():
+                    # Multi-word expansion (most common case)
+                    is_likely_expansion = True
+                    # Boost confidence if initials match strictly
+                    if self._initials_match(abbrev, paren_content):
+                        confidence = 0.95
+                    else:
+                        confidence = 0.88
+                elif len(words) == 1 and len(paren_content) > len(abbrev) and not paren_content.isupper():
+                    # Single-word expansion like "photoluminescence" for PL
+                    # Must be longer than the abbreviation and not all caps
+                    is_likely_expansion = True
+                    confidence = 0.85
+
+                if is_likely_expansion:
+                    mapping = AbbreviationMapping(
+                        abbreviation=abbrev,
+                        expansion=paren_content,
+                        domain='document',
+                        confidence=confidence,
+                        source='document_pre_scan'
+                    )
+                    self.database.add_abbreviation(mapping)
+                    discovered.append(mapping)
+                    self._document_definitions[abbrev.upper()] = paren_content
+                    logger.debug(f"Pre-scan discovered (ABBREV->def): {abbrev} -> {paren_content}")
+
+        # === Pattern 2 (Secondary): Full Form (ABBREV) ===
+        # Find "(ABBREV)" and look backwards for the full form.
+        # Only used for abbreviations NOT already found by Pattern 1.
+        paren_abbrev_patterns = [
+            # Standard: all uppercase (e.g., PSC, API, FAIR)
+            re.compile(r'\(([A-Z][A-Z0-9]{1,9}s?)\)'),
+            # Mixed case: e.g., IoT, PhD
+            re.compile(r'\(([A-Z][a-z]*[A-Z][a-z]*)\)'),
+            # With ampersand: e.g., O&M, R&D
+            re.compile(r'\(([A-Z]&[A-Z])\)'),
+        ]
+
+        for paren_pattern in paren_abbrev_patterns:
+            for match in paren_pattern.finditer(text):
+                raw_abbrev = match.group(1)
+                abbrev = raw_abbrev.rstrip('s')  # Strip plural 's'
+                paren_start = match.start()
+
+                if abbrev.upper() in self._document_definitions:
+                    continue
+
+                # Get the text before the parenthesis (up to 200 chars back)
+                lookback_start = max(0, paren_start - 200)
+                preceding_text = text[lookback_start:paren_start].rstrip()
+
+                # Extract the full form by matching initials backwards
+                full_form = self._extract_full_form_backwards(abbrev, preceding_text)
+
+                if full_form:
+                    for ab in set([abbrev, raw_abbrev]):
+                        if ab.upper() not in self._document_definitions:
+                            mapping = AbbreviationMapping(
+                                abbreviation=ab,
+                                expansion=full_form,
+                                domain='document',
+                                confidence=0.90,
+                                source='document_pre_scan'
+                            )
+                            self.database.add_abbreviation(mapping)
+                            discovered.append(mapping)
+                            self._document_definitions[ab.upper()] = full_form
+                            logger.debug(f"Pre-scan discovered (def->ABBREV): {ab} -> {full_form}")
+
+        if discovered:
+            logger.info(
+                f"Pre-scan found {len(discovered)} abbreviation definitions in document: "
+                f"{', '.join(d.abbreviation + ' -> ' + d.expansion for d in discovered)}"
+            )
+
+        return discovered
+
+    def _extract_full_form_backwards(self, abbrev: str, preceding_text: str) -> Optional[str]:
+        """
+        Extract the full form of an abbreviation by matching initials backwards.
+
+        Given abbreviation "PCE" and preceding text "...a sharp upswing of power conversion efficiency",
+        works backwards:
+          - "efficiency" -> 'E' matches PCE[2] ✓
+          - "conversion" -> 'C' matches PCE[1] ✓
+          - "power" -> 'P' matches PCE[0] ✓
+          → returns "power conversion efficiency"
+
+        Handles hyphenated words (e.g., "metal-insulator-semiconductor" contributes M, I, S).
+        Skips common prepositions/articles when they don't match.
+        """
+        if not preceding_text or len(abbrev) < 2:
+            return None
+
+        # Split preceding text into words (preserve order)
+        words = preceding_text.split()
+        if not words:
+            return None
+
+        abbrev_upper = abbrev.upper()
+        abbrev_len = len(abbrev_upper)
+
+        # Try to match from the end of preceding text backwards
+        # Each word (or hyphenated sub-word) should match one letter of the abbreviation
+        matched_words = []
+        abbrev_idx = abbrev_len - 1  # Start from last letter
+
+        skip_words = {'a', 'an', 'the', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or', 'by', 'with', 'is'}
+
+        for word in reversed(words):
+            if abbrev_idx < 0:
+                break
+
+            # Clean the word (remove punctuation at edges)
+            clean_word = re.sub(r'^[^A-Za-z]+|[^A-Za-z]+$', '', word)
+            if not clean_word:
+                continue
+
+            # Handle hyphenated words: "metal-insulator-semiconductor" → [metal, insulator, semiconductor]
+            if '-' in clean_word:
+                sub_words = [sw for sw in clean_word.split('-') if sw]
+                # Try matching sub-words in reverse
+                sub_matched = []
+                temp_idx = abbrev_idx
+                for sub_word in reversed(sub_words):
+                    if temp_idx < 0:
+                        break
+                    if sub_word[0].upper() == abbrev_upper[temp_idx]:
+                        sub_matched.insert(0, sub_word)
+                        temp_idx -= 1
+                    else:
+                        break
+
+                if sub_matched and len(sub_matched) > 0 and temp_idx < abbrev_idx:
+                    matched_words.insert(0, clean_word)
+                    abbrev_idx = temp_idx
+                    continue
+
+            # Single word matching
+            first_letter = clean_word[0].upper()
+            if first_letter == abbrev_upper[abbrev_idx]:
+                matched_words.insert(0, clean_word)
+                abbrev_idx -= 1
+            elif clean_word.lower() in skip_words:
+                # Include skippable words between matched words for readability
+                # but only if we've already started matching
+                if matched_words:
+                    matched_words.insert(0, clean_word)
+            else:
+                # Non-matching, non-skippable word - stop if we've started matching
+                if matched_words:
+                    break
+
+        # Check if all abbreviation letters were matched
+        if abbrev_idx >= 0:
+            return None
+
+        full_form = ' '.join(matched_words)
+
+        # Final sanity checks
+        if len(full_form) < 3:
+            return None
+
+        return full_form
+
+    def _initials_match(self, abbrev: str, full_form: str) -> bool:
+        """Check if initials of full_form match the abbreviation."""
+        skip_words = {'a', 'an', 'the', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or', 'by', 'with'}
+        words = full_form.split()
+        initials = []
+        for word in words:
+            clean = re.sub(r'^[^A-Za-z]+|[^A-Za-z]+$', '', word)
+            if not clean:
+                continue
+            if '-' in clean:
+                for sub in clean.split('-'):
+                    if sub and sub.lower() not in skip_words:
+                        initials.append(sub[0].upper())
+            elif clean.lower() not in skip_words:
+                initials.append(clean[0].upper())
+
+        return ''.join(initials) == abbrev.upper()
+
     def expand_abbreviations(
         self,
         document: StandardizedDocumentOutput,
@@ -393,21 +645,28 @@ class AbbreviationExpander:
     ) -> Tuple[StandardizedDocumentOutput, List[AbbreviationMapping]]:
         """
         Expand abbreviations in a document.
-        
+
+        First pre-scans the document for inline abbreviation definitions
+        (e.g., "perovskite solar cells (PSCs)"), then expands subsequent
+        occurrences throughout the document.
+
         Args:
             document: The document to process
             domains: Preferred domains for expansion
             confidence_threshold: Minimum confidence for expansion
-            
+
         Returns:
             Tuple of (updated_document, expansions_made)
         """
-        domains = domains or ['general', 'technical', 'academic']
+        domains = domains or ['general', 'technical', 'academic', 'document']
         expansions_made = []
-        
+
+        # Pre-scan document for inline abbreviation definitions
+        discovered = self._pre_scan_document(document)
+
         # Create document context
         doc_context = self._create_document_context(document)
-        
+
         # Process plain text
         expanded_plain_text, plain_expansions = self._expand_text(
             document.plain_text,
@@ -415,7 +674,7 @@ class AbbreviationExpander:
             domains,
             confidence_threshold
         )
-        
+
         # Process markdown text
         expanded_markdown_text, markdown_expansions = self._expand_text(
             document.markdown_text,
@@ -423,7 +682,7 @@ class AbbreviationExpander:
             domains,
             confidence_threshold
         )
-        
+
         # Process content elements
         expanded_elements = []
         for element in document.content_elements:
@@ -433,29 +692,31 @@ class AbbreviationExpander:
                 domains,
                 confidence_threshold
             )
-            
+
             # Create new element with expanded content
             expanded_element = element.model_copy()
             expanded_element.content = expanded_content
             expanded_elements.append(expanded_element)
-            
+
             expansions_made.extend(element_expansions)
-        
-        # Combine all expansions
+
+        # Combine all expansions (include discovered definitions)
         expansions_made.extend(plain_expansions)
         expansions_made.extend(markdown_expansions)
-        
+        expansions_made.extend(discovered)
+
         # Remove duplicates
         unique_expansions = self._deduplicate_expansions(expansions_made)
-        
+
         # Create updated document
         updated_document = document.model_copy()
         updated_document.content_elements = expanded_elements
         updated_document.plain_text = expanded_plain_text
         updated_document.markdown_text = expanded_markdown_text
-        
-        logger.info(f"Expanded {len(unique_expansions)} abbreviations in document")
-        
+
+        logger.info(f"Expanded {len(unique_expansions)} abbreviations in document "
+                     f"({len(discovered)} from pre-scan, {len(unique_expansions) - len(discovered)} from database)")
+
         return updated_document, unique_expansions
     
     def _create_document_context(self, document: StandardizedDocumentOutput) -> AbbreviationContext:
@@ -496,51 +757,98 @@ class AbbreviationExpander:
         """Expand abbreviations in a text string."""
         if not text:
             return text, []
-        
+
         # Detect abbreviations
         abbreviations = self.detector.detect_abbreviations(text, context)
-        
+
         if not abbreviations:
             return text, []
-        
+
         # Sort by position (reverse order to maintain positions during replacement)
         abbreviations.sort(key=lambda x: x[1], reverse=True)
-        
+
         expanded_text = text
         expansions_made = []
-        
+
         for abbrev, start_pos, end_pos in abbreviations:
+            # Skip if this occurrence is already part of a definition pattern
+            # e.g., "Full Form (ABBREV)" or "ABBREV (Full Form)"
+            if self._is_definition_site(expanded_text, abbrev, start_pos, end_pos):
+                continue
+
+            # Skip if already expanded (avoid double expansion)
+            if self._is_already_expanded(expanded_text, abbrev, start_pos, end_pos):
+                continue
+
             # Get possible expansions
             possible_expansions = []
             for domain in domains:
                 possible_expansions.extend(self.database.get_expansions(abbrev, domain))
-            
+
             if not possible_expansions:
                 # Try without domain filter
                 possible_expansions = self.database.get_expansions(abbrev)
-            
+
             if not possible_expansions:
                 continue
-            
+
             # Select best expansion
             best_expansion = self._select_best_expansion(
                 abbrev, possible_expansions, context, confidence_threshold
             )
-            
+
             if best_expansion:
                 # Create expansion text
                 expansion_text = f"{abbrev} ({best_expansion.expansion})"
-                
+
                 # Replace in text
                 expanded_text = (
-                    expanded_text[:start_pos] + 
-                    expansion_text + 
+                    expanded_text[:start_pos] +
+                    expansion_text +
                     expanded_text[end_pos:]
                 )
-                
+
                 expansions_made.append(best_expansion)
-        
+
         return expanded_text, expansions_made
+
+    def _is_definition_site(self, text: str, abbrev: str, start_pos: int, end_pos: int) -> bool:
+        """
+        Check if this abbreviation occurrence is a definition site.
+
+        A definition site is where the abbreviation is being defined,
+        e.g., "metal-insulator-semiconductor (MIS)" or "MIS (metal-insulator-semiconductor)".
+        We skip these to avoid double-wrapping.
+        """
+        # Check if abbreviation is inside parentheses (preceded by full form)
+        # Pattern: "full form (ABBREV)"
+        before = text[max(0, start_pos - 2):start_pos]
+        after = text[end_pos:min(len(text), end_pos + 2)]
+        if '(' in before and ')' in after:
+            return True
+
+        # Check if abbreviation is followed by its expansion in parentheses
+        # Pattern: "ABBREV (full form)"
+        after_text = text[end_pos:min(len(text), end_pos + 100)]
+        if after_text.lstrip().startswith('('):
+            paren_content = re.match(r'\s*\(([^)]+)\)', after_text)
+            if paren_content:
+                content = paren_content.group(1).strip()
+                # If the parenthesized content is not all caps and longer than
+                # the abbreviation, it's likely a definition (handles both
+                # multi-word and single-word expansions like "photoluminescence")
+                if not content.isupper() and len(content) > len(abbrev):
+                    return True
+
+        return False
+
+    def _is_already_expanded(self, text: str, abbrev: str, start_pos: int, end_pos: int) -> bool:
+        """Check if this abbreviation has already been expanded at this position."""
+        after_text = text[end_pos:min(len(text), end_pos + 200)]
+        # Check for pattern: "ABBREV (expansion)" already present
+        if after_text.lstrip().startswith('('):
+            return True
+        return False
     
     def _select_best_expansion(
         self,
@@ -552,33 +860,40 @@ class AbbreviationExpander:
         """Select the best expansion for an abbreviation."""
         if not expansions:
             return None
-        
+
         # Filter by confidence threshold
         valid_expansions = [e for e in expansions if e.confidence >= confidence_threshold]
-        
+
         if not valid_expansions:
             return None
-        
-        # Prefer domain-specific expansions
+
+        # Prefer document-scanned definitions (most contextually accurate)
+        doc_expansions = [e for e in valid_expansions if e.source == 'document_pre_scan']
+        if doc_expansions:
+            return max(doc_expansions, key=lambda e: e.confidence)
+
+        # Then prefer domain-specific expansions
         domain_expansions = [e for e in valid_expansions if e.domain == context.domain]
         if domain_expansions:
             return max(domain_expansions, key=lambda e: e.confidence)
-        
+
         # Fall back to highest confidence
         return max(valid_expansions, key=lambda e: e.confidence)
     
     def _deduplicate_expansions(self, expansions: List[AbbreviationMapping]) -> List[AbbreviationMapping]:
-        """Remove duplicate expansions."""
-        seen = set()
-        unique_expansions = []
-        
+        """Remove duplicate expansions, keeping highest confidence per abbreviation."""
+        # Group by abbreviation (case-insensitive)
+        abbrev_map: Dict[str, AbbreviationMapping] = {}
+
         for expansion in expansions:
-            key = (expansion.abbreviation, expansion.expansion, expansion.domain)
-            if key not in seen:
-                seen.add(key)
-                unique_expansions.append(expansion)
-        
-        return unique_expansions
+            key = expansion.abbreviation.upper()
+            if key not in abbrev_map:
+                abbrev_map[key] = expansion
+            elif expansion.confidence > abbrev_map[key].confidence:
+                # Keep highest confidence expansion
+                abbrev_map[key] = expansion
+
+        return list(abbrev_map.values())
     
     def learn_from_document(self, document: StandardizedDocumentOutput):
         """Learn new abbreviations from a document."""
