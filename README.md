@@ -8,7 +8,8 @@ A production-ready document processing system that extracts text from PDF docume
 - **Advanced PDF Processing**: Multi-library approach with **MinerU API** (primary) and fallback to **PyMuPDF**, **pdfplumber**, and **pdfminer** for maximum extraction reliability.
 - **MinerU Integration**: High-quality PDF parsing with layout detection (DocLayout-YOLO), OCR support (109 languages via PaddleOCR), table structure recognition, and formula recognition (UniMERNet).
 - **High-Precision RAG Pipeline**:
-  - **Multiple Chunking Strategies**: Recursive, Fixed-size, and Semantic chunking.
+  - **Multiple Chunking Strategies**: Recursive, Fixed-size, Semantic, and Hybrid Structure-Aware chunking.
+  - **Hybrid Structure-Aware Chunking**: Normalizes documents into a hierarchical section model, routes sections by length (SHORT/MEDIUM/LONG), and chunks respecting section, paragraph, and sentence boundaries.
   - **Context Enrichment**: Anthropic-style context-enriched chunking for improved retrieval accuracy.
 - **Individual Document Management**: Support for individual document deletion with full cleanup of associated chunks and metadata.
 - **Robust Storage Architecture**: Multi-tier storage system supporting both SQLite (development) and PostgreSQL (production).
@@ -89,10 +90,35 @@ curl "http://localhost:8088/api/v1/documents/{document_id}/abbreviations"
 - `PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD=0.7`
 
 ### Chunking Strategies
-The system supports three primary chunking strategies to optimize for different RAG use cases:
+The system supports four chunking strategies to optimize for different RAG use cases:
 - **Recursive Character**: Splits text based on character hierarchy (paragraphs, sentences, words).
 - **Fixed Size**: Simple fixed-token windows with configurable overlap.
 - **Semantic**: Uses embeddings to find natural semantic boundaries in the text.
+- **Hybrid Structure-Aware** *(New)*: A multi-stage pipeline that normalizes MinerU output into a hierarchical document model, routes sections by length, and chunks respecting structural boundaries. See details below.
+
+### Hybrid Structure-Aware Chunking
+The hybrid chunker is a structure-aware pipeline designed for documents with rich heading/section structure (e.g., MinerU-processed PDFs).
+
+**Pipeline stages:**
+1. **Normalization**: MinerU `StandardizedDocumentOutput` is transformed into a `NormalizedDocument` with hierarchical sections, headings (H1-H6), paragraphs, and pre-split sentences.
+2. **Section Routing**: Each section is classified by word count:
+   - **SHORT** (< 150 words): Kept as a single chunk or merged with adjacent short sections.
+   - **MEDIUM** (150-800 words): Recursively split at paragraph/sentence boundaries.
+   - **LONG** (> 800 words): Recursively split and flagged as candidates for future semantic refinement.
+3. **Structure-Aware Recursive Chunking**: Splits follow a Section → Paragraph → Sentence boundary hierarchy, preserving heading context (breadcrumb path) across chunks.
+4. **Overlap & Linking**: Adjacent chunks receive configurable word overlap for context continuity and are linked with previous/next relationships.
+
+**Configuration:**
+```python
+short_section_threshold: 150   # words
+long_section_threshold: 800    # words
+target_chunk_size: 500         # words
+max_chunk_size: 800            # words
+min_chunk_size: 50             # words
+chunk_overlap: 50              # words
+```
+
+**Module location:** `src/docforge/postprocessing/hybrid_chunking/`
 
 ### Context Enrichment
 Inspired by Anthropic's "Contextual Retrieval", the system can enrich each chunk with document-level context. This significantly improves retrieval accuracy by providing the LLM with the necessary background for each individual chunk.

@@ -15,7 +15,7 @@ graph TD
     A[User Upload] -->|PDF| B[MinerU Processor]
     B -->|Raw Text/Tables/Images| B5[Abbreviation Expander]
     B5 -->|Expanded Text| C[Document Chunker]
-    C -->|Strategy: Recursive/Semantic| D[Context Enricher]
+    C -->|Strategy: Recursive/Semantic/Hybrid| D[Context Enricher]
     D -->|Enriched Chunks| E[Multi-Tier Storage]
 
     subgraph "Extraction Layer"
@@ -41,7 +41,16 @@ graph TD
     C --> C1[Recursive]
     C --> C2[Fixed-Size]
     C --> C3[Semantic]
+    C --> C4[Hybrid Structure-Aware]
     D --> D1[Anthropic-style Context]
+    end
+
+    subgraph "Hybrid Chunking Pipeline"
+    C4 --> H1[MinerU Normalizer]
+    H1 --> H2[Section Router]
+    H2 -->|SHORT| H3a[Keep / Merge]
+    H2 -->|MEDIUM| H3b[Recursive Split]
+    H2 -->|LONG| H3c[Recursive + Semantic Flag]
     end
 
     subgraph "Storage Layer"
@@ -122,6 +131,46 @@ Documents are split into manageable "chunks" using configurable strategies:
 - **Recursive**: Respects natural boundaries like paragraphs and sentences.
 - **Semantic**: Uses AI embeddings to find logical breaks in meaning.
 - **Fixed-Size**: Standard token-based windows with overlap.
+- **Hybrid Structure-Aware**: A multi-stage pipeline that leverages the document's heading/section structure for higher-fidelity chunking. Details below.
+
+#### Hybrid Structure-Aware Chunking (`hybrid_chunking/`)
+This is the newest and most advanced chunking strategy, purpose-built for documents processed by MinerU where rich structural metadata (headings, sections, page numbers) is available.
+
+**How it works:**
+
+1. **Document Normalization** (`MinerUDocumentNormalizer`): Converts `StandardizedDocumentOutput` into a `NormalizedDocument` — a hierarchical model with sections (H1-H6), paragraphs, and pre-split sentences. Page numbers and element IDs are preserved for traceability.
+
+2. **Section Routing** (`SectionRouter`): Each section is classified by word count into one of three categories:
+   | Category | Word Count | Strategy |
+   |----------|-----------|----------|
+   | **SHORT** | < 150 | Keep as single chunk, or merge with adjacent short sections |
+   | **MEDIUM** | 150 – 800 | Recursive split at paragraph/sentence boundaries |
+   | **LONG** | > 800 | Recursive split + flagged for future semantic refinement |
+
+3. **Structure-Aware Recursive Chunking** (`StructureAwareRecursiveChunker`): Splits follow a strict boundary hierarchy — **Section → Paragraph → Sentence** — so chunks never straddle structural boundaries. Each chunk carries its heading breadcrumb path (e.g., "Introduction > Background > History") for context.
+
+4. **Overlap & Linking**: Adjacent chunks receive configurable word overlap (default 50 words) for context continuity and are linked with previous/next relationships.
+
+5. **Storage Adapter** (`HybridChunkStorageAdapter`): Converts `HybridChunkResult` objects into the format expected by `ChunkStorage`, preserving all hybrid-specific metadata (size category, boundary type, heading path, semantic refinement flag).
+
+**Configuration** (`HybridChunkingConfig`):
+```python
+short_section_threshold: 150   # words — below this → SHORT
+long_section_threshold: 800    # words — above this → LONG
+target_chunk_size: 500         # words — ideal chunk size
+max_chunk_size: 800            # words — hard upper limit
+min_chunk_size: 50             # words — minimum viable chunk
+chunk_overlap: 50              # words — overlap between adjacent chunks
+```
+
+Presets are available via `HybridChunkingConfig.for_short_documents()` and `HybridChunkingConfig.for_long_documents()`.
+
+**Key features:**
+- Heading path context (breadcrumb) attached to every chunk
+- Adjacent short section merging to avoid micro-chunks
+- Semantic refinement candidate flagging for long sections
+- Full element ID and page number traceability back to MinerU output
+- Previous/next chunk relationship linking
 
 ### 4. Context Enrichment Phase
 To solve the "lost in translation" problem in RAG, each chunk is optionally enriched with document-level context. This provides the LLM with the "big picture" for every small piece of text, significantly improving retrieval accuracy.
@@ -204,7 +253,7 @@ Tested configurations:
 
 ### Environment Configuration
 Key settings can be adjusted in `docker-compose.yml` or `docker-compose.gpu.yml`:
-- `PROCESSING__DEFAULT_CHUNKING_STRATEGY`: Default strategy (recursive/semantic).
+- `PROCESSING__DEFAULT_CHUNKING_STRATEGY`: Default strategy (recursive/semantic/hybrid).
 - `OPENAI_API_KEY`: Required for semantic chunking and enrichment.
 - `MINERU_API_URL`: MinerU service endpoint (default: `http://mineru-api:8080`).
 - `MINERU_API_ENABLED`: Enable/disable MinerU API (`true`/`false`).
