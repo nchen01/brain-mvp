@@ -130,6 +130,34 @@ class MinerUConfig(BaseModel):
     enable_fallback: bool = Field(default=True, description="Enable fallback to AdvancedPDFProcessor if MinerU API fails")
 
 
+class SummarizationConfig(BaseModel):
+    """Configuration for the SummarizationService stage."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    enabled: bool = Field(default=False, description="Enable document and section summarization")
+    mode: str = Field(default="llm", description="Summarization mode: 'llm' or 'extractive'")
+    model_name: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="LLM model identifier (used when mode='llm')",
+    )
+    api_provider: str = Field(
+        default="anthropic",
+        description="LLM API provider: 'anthropic' (default) or 'openai'",
+    )
+    max_doc_tokens_for_direct_summary: int = Field(
+        default=8000,
+        ge=1000,
+        le=128000,
+        description="Max estimated doc tokens before switching to headings+excerpt strategy",
+    )
+    section_summary_min_tokens: int = Field(
+        default=200,
+        ge=50,
+        le=2000,
+        description="Min estimated section tokens to trigger a section-level summary",
+    )
+
+
 class ProcessingConfig(BaseModel):
     """Document processing configuration."""
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -161,6 +189,12 @@ class ProcessingConfig(BaseModel):
     context_enrichment_max_words: int = Field(default=100, ge=20, le=200, description="Max words in generated context")
     context_enrichment_temperature: float = Field(default=0.3, ge=0.0, le=1.0, description="Temperature for context generation")
     default_chunking_strategy: str = Field(default="recursive", description="Default chunking strategy: recursive, fixed_size, or semantic")
+
+    # Summarization configuration (new stage between parsing and chunking)
+    summarization: SummarizationConfig = Field(
+        default_factory=SummarizationConfig,
+        description="Settings for the SummarizationService stage",
+    )
 
 
 class SecurityConfig(BaseModel):

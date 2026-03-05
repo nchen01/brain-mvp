@@ -8,6 +8,21 @@ from pydantic import BaseModel, Field, ConfigDict
 from docforge.preprocessing.schemas import StandardizedDocumentOutput
 
 
+class DocumentSummaries(BaseModel):
+    """Summaries generated for a document and its sections.
+
+    Produced by SummarizationService and threaded through chunking so that
+    every Chunk carries the doc-level and section-level context strings used
+    to build enriched embedding inputs.
+    """
+
+    doc_summary: str = Field(default="", description="2-3 sentence document overview")
+    section_summaries: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Maps heading element_id to 1-2 sentence section summary",
+    )
+
+
 class ProcessingMethod(str, Enum):
     """Available post-processing methods."""
     PARAGRAPH_CHUNKING = "paragraph_chunking"
@@ -28,6 +43,7 @@ class ChunkingStrategy(str, Enum):
     SLIDING_WINDOW = "sliding_window"
     HIERARCHICAL = "hierarchical"
     SECTION_BASED = "section_based"
+    HYBRID_STRUCTURE_AWARE = "hybrid_structure_aware"  # Structure-aware with length-based routing
 
 
 class ChunkType(str, Enum):
@@ -69,7 +85,12 @@ class ChunkData(BaseModel):
     metadata: ChunkMetadata
     position: Dict[str, Any] = Field(default_factory=dict)
     relationships: Dict[str, List[str]] = Field(default_factory=dict)  # Related chunks
-    
+
+    # Summary fields populated by SummarizationService + DocumentChunker
+    doc_summary: str = Field(default="", description="Document-level summary shared by all chunks")
+    section_summary: str = Field(default="", description="Section-level summary for this chunk's section")
+    section_path: str = Field(default="", description="Human-readable heading path (e.g. 'Intro > Background')")
+
     model_config = ConfigDict(
         json_encoders={datetime: lambda v: v.isoformat()}
     )

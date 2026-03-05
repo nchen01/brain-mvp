@@ -437,6 +437,73 @@
             font-size: 1.2em;
         }
 
+        /* Token Summary Panel */
+        .token-summary {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid #dee2e6;
+            border-radius: 12px;
+            padding: 18px 22px;
+            margin-bottom: 18px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 14px;
+        }
+
+        .token-stat-card {
+            text-align: center;
+            background: white;
+            border-radius: 8px;
+            padding: 12px 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+
+        .token-stat-card .stat-value {
+            font-size: 1.35em;
+            font-weight: 700;
+            color: #212529;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        .token-stat-card .stat-label {
+            font-size: 0.75em;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        /* Per-chunk token bar */
+        .chunk-token-bar-container {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chunk-token-bar {
+            flex: 1;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .chunk-token-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            transition: width 0.3s ease;
+        }
+
+        .chunk-token-label {
+            font-size: 0.78em;
+            color: #6c757d;
+            white-space: nowrap;
+            min-width: 70px;
+            text-align: right;
+            font-family: monospace;
+        }
+
         /* Existing Documents */
         .existing-documents-section {
             background: #f8f9fa;
@@ -1173,15 +1240,15 @@
                     </div>
                     <div class="metadata-item">
                         <div class="metadata-label">Document Tokens</div>
-                        <div class="metadata-value">${tokenStats.document_tokens ?? '—'}</div>
+                        <div class="metadata-value">${tokenStats.document_tokens?.toLocaleString() ?? '—'}</div>
                     </div>
                     <div class="metadata-item">
-                        <div class="metadata-label">Chunk Tokens</div>
-                        <div class="metadata-value">${tokenStats.chunk_tokens ?? '—'} (${tokenStats.chunk_count || 0} chunks)</div>
+                        <div class="metadata-label">Total Chunk Tokens</div>
+                        <div class="metadata-value">${tokenStats.chunk_tokens?.toLocaleString() ?? '—'} (${tokenStats.chunk_count || 0} chunks)</div>
                     </div>
                     <div class="metadata-item">
-                        <div class="metadata-label">Avg Chunk Tokens</div>
-                        <div class="metadata-value">${tokenStats.average_chunk_tokens ?? '—'}</div>
+                        <div class="metadata-label">Avg / Min / Max Tokens</div>
+                        <div class="metadata-value">${tokenStats.average_chunk_tokens?.toLocaleString() ?? '—'} / ${tokenStats.min_chunk_tokens?.toLocaleString() ?? '—'} / ${tokenStats.max_chunk_tokens?.toLocaleString() ?? '—'}</div>
                     </div>
                 `;
                 }
@@ -1534,9 +1601,16 @@
                 const data = await response.json();
                 const chunks = data.chunks || [];
 
-                // Update stats
+                // Calculate token statistics
+                const tokenCounts = chunks.map(c => c.token_count || c.metadata?.token_count || 0);
+                const totalTokens = tokenCounts.reduce((a, b) => a + b, 0);
+                const avgTokens = chunks.length ? Math.round(totalTokens / chunks.length) : 0;
+                const minTokens = tokenCounts.length ? Math.min(...tokenCounts) : 0;
+                const maxTokens = tokenCounts.length ? Math.max(...tokenCounts) : 0;
+
+                // Update stats header
                 if (chunkStats) {
-                    chunkStats.textContent = `${chunks.length} chunks found`;
+                    chunkStats.textContent = `${chunks.length} chunks | ${totalTokens.toLocaleString()} total tokens`;
                 }
 
                 // Render chunks
@@ -1545,13 +1619,40 @@
                     return;
                 }
 
-                chunksGrid.innerHTML = chunks.map(chunk => {
+                // Build token summary panel + chunk cards
+                const summaryHtml = `
+                    <div class="token-summary">
+                        <div class="token-stat-card">
+                            <div class="stat-value">${totalTokens.toLocaleString()}</div>
+                            <div class="stat-label">Total Tokens</div>
+                        </div>
+                        <div class="token-stat-card">
+                            <div class="stat-value">${chunks.length}</div>
+                            <div class="stat-label">Chunks</div>
+                        </div>
+                        <div class="token-stat-card">
+                            <div class="stat-value">${avgTokens.toLocaleString()}</div>
+                            <div class="stat-label">Avg Tokens</div>
+                        </div>
+                        <div class="token-stat-card">
+                            <div class="stat-value">${minTokens.toLocaleString()}</div>
+                            <div class="stat-label">Min Tokens</div>
+                        </div>
+                        <div class="token-stat-card">
+                            <div class="stat-value">${maxTokens.toLocaleString()}</div>
+                            <div class="stat-label">Max Tokens</div>
+                        </div>
+                    </div>
+                `;
+
+                const chunkCardsHtml = chunks.map(chunk => {
                     const chunkType = (chunk.chunk_type || chunk.metadata?.chunk_type || 'unknown').toString();
                     const wordCount = chunk.metadata?.word_count || chunk.word_count || 0;
                     const chunkStrategy = chunk.chunking_strategy || 'n/a';
                     const isEnriched = Boolean(chunk.enriched_content);
                     const chunkContent = chunk.content || chunk.original_content || chunk.enriched_content || '';
                     const tokenCount = chunk.token_count || chunk.metadata?.token_count || 0;
+                    const barPercent = maxTokens > 0 ? Math.round((tokenCount / maxTokens) * 100) : 0;
 
                     return `
                         <div class="chunk-card ${isEnriched ? 'chunk-enriched' : ''}">
@@ -1561,14 +1662,21 @@
                                     <span class="chunk-badge ${chunkType.toLowerCase()}">${chunkType}</span>
                                     <span class="chunk-badge">${chunkStrategy}</span>
                                     <span class="chunk-badge">${wordCount} words</span>
-                                    <span class="chunk-badge">${tokenCount} tokens</span>
                                 </div>
                             </div>
                             <div class="chunk-content">${chunkContent}</div>
+                            <div class="chunk-token-bar-container">
+                                <div class="chunk-token-bar">
+                                    <div class="chunk-token-bar-fill" style="width: ${barPercent}%"></div>
+                                </div>
+                                <span class="chunk-token-label">${tokenCount.toLocaleString()} tokens</span>
+                            </div>
                             ${isEnriched ? '<div class="enrichment-indicator" title="Enriched Content">✨</div>' : ''}
                         </div>
                     `;
                 }).join('');
+
+                chunksGrid.innerHTML = summaryHtml + chunkCardsHtml;
 
             } catch (error) {
                 console.error('Error loading chunks:', error);

@@ -45,6 +45,33 @@ from api.routers.auth import get_current_user, get_current_user_optional, UserIn
 
 logger = logging.getLogger(__name__)
 
+
+def _format_page_range(page_numbers: list) -> str:
+    """Format a list of page numbers into a human-readable range string.
+
+    Examples:
+        [1, 2, 3, 5] -> "1-3, 5"
+        [1]          -> "1"
+        []           -> ""
+    """
+    if not page_numbers:
+        return ""
+    pages = sorted(set(int(p) for p in page_numbers))
+    if len(pages) == 1:
+        return str(pages[0])
+    ranges = []
+    start = pages[0]
+    prev = pages[0]
+    for p in pages[1:]:
+        if p == prev + 1:
+            prev = p
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else str(start))
+            start = prev = p
+    ranges.append(f"{start}-{prev}" if start != prev else str(start))
+    return ", ".join(ranges)
+
+
 # Initialize router
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -618,16 +645,20 @@ async def get_document_content(
         
         # Token statistics
         document_tokens = token_counter.count(source_content)
-        chunk_token_total = 0
+        chunk_token_counts = []
         chunk_count = len(chunk_records)
         if chunk_records:
             for chunk in chunk_records:
-                chunk_token_total += (
+                ct = (
                     chunk.get('token_count')
                     or chunk.get('metadata', {}).get('token_count')
                     or token_counter.count(chunk.get('original_content'))
                 )
+                chunk_token_counts.append(ct)
+        chunk_token_total = sum(chunk_token_counts)
         avg_chunk_tokens = int(chunk_token_total / chunk_count) if chunk_count else 0
+        min_chunk_tokens = min(chunk_token_counts) if chunk_token_counts else 0
+        max_chunk_tokens = max(chunk_token_counts) if chunk_token_counts else 0
         
         # Return based on format
         if format == "text":
@@ -658,6 +689,8 @@ async def get_document_content(
                     "document_tokens": document_tokens,
                     "chunk_tokens": chunk_token_total,
                     "average_chunk_tokens": avg_chunk_tokens,
+                    "min_chunk_tokens": min_chunk_tokens,
+                    "max_chunk_tokens": max_chunk_tokens,
                     "chunk_count": chunk_count
                 },
                 "metadata": {
@@ -1736,6 +1769,7 @@ async def process_document_async(
             if hasattr(upload_timestamp, "isoformat"):
                 upload_timestamp = upload_timestamp.isoformat()
             
+            ingestion_ts = datetime.utcnow().isoformat()
             chunk_dict['metadata'].update({
                 'document_filename': filename,
                 'document_file_size': version_info.file_size,
@@ -1744,9 +1778,19 @@ async def process_document_async(
                 'doc_uuid': document_id,
                 'version_number': version_number,
                 'chunking_strategy': strategy_name.lower(),
-                'processed_at': datetime.utcnow().isoformat(),
+                'processed_at': ingestion_ts,
                 'abbreviation_expansion_enabled': len(abbreviation_expansions) > 0,
-                'abbreviations_expanded': len(abbreviation_expansions)
+                'abbreviations_expanded': len(abbreviation_expansions),
+                # Standardised metadata for retrieval quality inspection
+                'doc_id': document_id,
+                'title': result.output.document_metadata.get('title', filename),
+                'section_path': (getattr(chunk, 'position', None) or {}).get('heading_path', [])
+                                or (getattr(chunk, 'position', None) or {}).get('heading_context', ''),
+                'page_range': _format_page_range(getattr(chunk.metadata, 'page_numbers', [])),
+                'ingestion_timestamp': ingestion_ts,
+                # Propagate position data from ChunkData
+                'page_numbers': getattr(chunk.metadata, 'page_numbers', []),
+                'source_elements': getattr(chunk.metadata, 'source_elements', []),
             })
             
             if enriched_content:

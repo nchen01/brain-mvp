@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 
 from docforge.preprocessing.schemas import StandardizedDocumentOutput, ContentElement, ContentType
@@ -11,9 +11,11 @@ from .schemas import (
     ChunkMetadata,
     ChunkType,
     ChunkingStrategy,
+    DocumentSummaries,
     create_chunk_data,
     create_chunk_metadata
 )
+from .hybrid_chunking import HybridDocumentChunker, HybridChunkingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -996,6 +998,55 @@ class SemanticChunker(BaseChunker):
         )
 
 
+class HybridStructureAwareChunker(BaseChunker):
+    """
+    Adapter that bridges BaseChunker interface to HybridDocumentChunker.
+
+    The hybrid chunker handles overlap, linking, and min-size filtering
+    internally, so DocumentChunker's _post_process_chunks should be skipped.
+    """
+
+    skip_post_processing = True
+
+    def __init__(self, config: Dict[str, Any] = None):
+        super().__init__(config)
+        hybrid_config = self._build_hybrid_config(config or {})
+        self._hybrid_chunker = HybridDocumentChunker(hybrid_config)
+
+    def _build_hybrid_config(self, config: Dict[str, Any]) -> HybridChunkingConfig:
+        """Map BaseChunker-style flat config dict to HybridChunkingConfig."""
+        kwargs = {}
+
+        # Direct hybrid config keys take priority
+        hybrid_fields = [
+            'target_chunk_size', 'max_chunk_size', 'min_chunk_size',
+            'chunk_overlap', 'short_section_threshold', 'long_section_threshold',
+            'merge_adjacent_short_sections', 'short_section_merge_threshold',
+            'respect_section_boundaries', 'respect_paragraph_boundaries',
+            'respect_sentence_boundaries', 'flag_long_sections_for_semantic',
+            'language',
+        ]
+        for key in hybrid_fields:
+            if key in config:
+                kwargs[key] = config[key]
+
+        # Map standard BaseChunker key as fallback
+        if 'target_chunk_size' not in kwargs and 'chunk_size' in config:
+            kwargs['target_chunk_size'] = config['chunk_size']
+        if 'chunk_overlap' not in kwargs and 'chunk_overlap' in config:
+            kwargs['chunk_overlap'] = config['chunk_overlap']
+        if 'min_chunk_size' not in kwargs and 'min_chunk_size' in config:
+            kwargs['min_chunk_size'] = config['min_chunk_size']
+        if 'language' not in kwargs and 'language' in config:
+            kwargs['language'] = config['language']
+
+        return HybridChunkingConfig(**kwargs)
+
+    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
+        """Chunk document using hybrid structure-aware approach."""
+        return self._hybrid_chunker.chunk_to_chunk_data(document)
+
+
 class DocumentChunker:
     """Main document chunker that supports multiple strategies."""
     
@@ -1014,23 +1065,43 @@ class DocumentChunker:
             ChunkingStrategy.SENTENCE: SentenceChunker,
             ChunkingStrategy.SECTION_BASED: SectionChunker,
             ChunkingStrategy.SEMANTIC: EnhancedSemanticChunker,  # Updated: Enhanced with embeddings
+            ChunkingStrategy.HYBRID_STRUCTURE_AWARE: HybridStructureAwareChunker,  # Structure-aware with routing
         }
         
         chunker_class = chunker_map.get(self.strategy, RecursiveChunker)  # Default to recursive
         return chunker_class(self.config)
     
-    def chunk_document(self, document: StandardizedDocumentOutput) -> List[ChunkData]:
-        """Chunk the document using the selected strategy."""
+    def chunk_document(
+        self,
+        document: StandardizedDocumentOutput,
+        summaries: Optional[DocumentSummaries] = None,
+    ) -> List[ChunkData]:
+        """Chunk the document using the selected strategy.
+
+        Args:
+            document: Preprocessed document.
+            summaries: Optional DocumentSummaries produced by SummarizationService.
+                       When provided, doc_summary / section_summary / section_path
+                       are attached to every chunk.
+
+        Returns:
+            List of ChunkData objects, enriched with summary fields when summaries
+            are supplied.
+        """
         try:
             chunks = self.chunker.chunk_document(document)
-            
-            # Post-process chunks
-            chunks = self._post_process_chunks(chunks)
-            
+
+            # Some chunkers (e.g., hybrid) handle post-processing internally
+            if not getattr(self.chunker, 'skip_post_processing', False):
+                chunks = self._post_process_chunks(chunks)
+
+            if summaries is not None:
+                chunks = self._attach_summaries(chunks, document, summaries)
+
             strategy_name = self.strategy.value if hasattr(self.strategy, 'value') else str(self.strategy)
             logger.info(f"Successfully chunked document into {len(chunks)} chunks using {strategy_name} strategy")
             return chunks
-            
+
         except Exception as e:
             strategy_name = self.strategy.value if hasattr(self.strategy, 'value') else str(self.strategy)
             logger.error(f"Error chunking document with {strategy_name} strategy: {e}")
@@ -1038,7 +1109,10 @@ class DocumentChunker:
             if self.strategy != ChunkingStrategy.PARAGRAPH:
                 logger.info("Falling back to paragraph chunking")
                 fallback_chunker = ParagraphChunker(self.config)
-                return fallback_chunker.chunk_document(document)
+                chunks = fallback_chunker.chunk_document(document)
+                if summaries is not None:
+                    chunks = self._attach_summaries(chunks, document, summaries)
+                return chunks
             raise
     
     def _post_process_chunks(self, chunks: List[ChunkData]) -> List[ChunkData]:
@@ -1081,6 +1155,76 @@ class DocumentChunker:
         
         return content
     
+    def _attach_summaries(
+        self,
+        chunks: List[ChunkData],
+        document: StandardizedDocumentOutput,
+        summaries: DocumentSummaries,
+    ) -> List[ChunkData]:
+        """Attach doc/section summaries and section path to every chunk.
+
+        Strategy:
+          1. Build a map from each element_id to the nearest preceding heading
+             element_id (gives the "owning section" for any element).
+          2. For each chunk try to resolve its section_id in priority order:
+             a. chunk.position["source_section_id"]  (hybrid chunker path)
+             b. Lookup the first source_element in the element→heading map.
+          3. Resolve section_path from chunk.position heading context fields.
+        """
+        # Build element_id → nearest-heading-id mapping
+        element_to_heading: Dict[str, str] = {}
+        current_heading_id = ""
+        for element in document.content_elements:
+            if element.content_type in ("heading", "HEADING"):
+                current_heading_id = element.element_id
+            element_to_heading[element.element_id] = current_heading_id
+
+        for chunk in chunks:
+            chunk.doc_summary = summaries.doc_summary
+
+            # Resolve section_id
+            section_id: str = chunk.position.get("source_section_id", "")
+            if not section_id and chunk.metadata.source_elements:
+                first_elem = chunk.metadata.source_elements[0]
+                section_id = element_to_heading.get(first_elem, "")
+
+            # Resolve section_path (human-readable heading breadcrumb)
+            section_path: str = (
+                chunk.position.get("heading_context")
+                or chunk.position.get("section_path")
+                or chunk.position.get("section_title")
+                or ""
+            )
+
+            chunk.section_summary = summaries.section_summaries.get(section_id, "")
+            chunk.section_path = section_path
+
+        return chunks
+
+    @staticmethod
+    def build_enriched_text(chunk: ChunkData, title: str = "") -> str:
+        """Build the enriched text string used for embedding.
+
+        Format::
+
+            Document: {title}. Overall summary: {doc_summary}.
+            Section: {section_path}. Section summary: {section_summary}.
+            Content: {raw_text}
+
+        Empty parts are omitted to avoid padding noise.
+        """
+        parts: List[str] = []
+        if title:
+            parts.append(f"Document: {title}.")
+        if chunk.doc_summary:
+            parts.append(f"Overall summary: {chunk.doc_summary}.")
+        if chunk.section_path:
+            parts.append(f"Section: {chunk.section_path}.")
+        if chunk.section_summary:
+            parts.append(f"Section summary: {chunk.section_summary}.")
+        parts.append(f"Content: {chunk.content}")
+        return " ".join(parts)
+
     def get_chunking_statistics(self, chunks: List[ChunkData]) -> Dict[str, Any]:
         """Get statistics about the chunking results."""
         if not chunks:

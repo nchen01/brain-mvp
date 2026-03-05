@@ -96,6 +96,9 @@ class PipelineConfig:
     context_enrichment_prompt_style: str = "default"
     context_enrichment_max_words: int = 100
     context_enrichment_temperature: float = 0.3
+
+    # Summarization Configuration (Phase 3)
+    enable_summarization: bool = False
     
     # Processing options
     enable_postprocessing: bool = True
@@ -614,10 +617,36 @@ class DocForgePipeline:
                         'context_temperature': getattr(self.config, 'context_enrichment_temperature', 0.3),
                     })
             
+            # Summarization stage (optional, runs before chunking)
+            summaries = None
+            if getattr(self.config, 'enable_summarization', False):
+                try:
+                    from docforge.postprocessing.summarizer import SummarizationService
+                    from config.settings import get_settings
+                    summ_cfg = get_settings().processing.summarization
+                    summarizer = SummarizationService(
+                        enabled=summ_cfg.enabled,
+                        mode=summ_cfg.mode,
+                        model_name=summ_cfg.model_name,
+                        api_provider=summ_cfg.api_provider,
+                        max_doc_tokens_for_direct_summary=summ_cfg.max_doc_tokens_for_direct_summary,
+                        section_summary_min_tokens=summ_cfg.section_summary_min_tokens,
+                    )
+                    summaries = summarizer.summarize_document(processed_document)
+                    storage_logger.info(
+                        f"Summarized document {document_uuid} "
+                        f"(doc_summary={bool(summaries.doc_summary)}, "
+                        f"sections={len(summaries.section_summaries)})"
+                    )
+                except Exception as _summ_err:
+                    storage_logger.warning(
+                        f"Summarization failed for {document_uuid}, continuing without summaries: {_summ_err}"
+                    )
+
             # Create chunker and chunk document
             chunker = DocumentChunker(strategy=strategy, config=chunker_config)
-            chunks = chunker.chunk_document(processed_document)
-            
+            chunks = chunker.chunk_document(processed_document, summaries=summaries)
+
             storage_logger.info(f"Created {len(chunks)} chunks for document {document_uuid}")
             
             # Enrich chunks if configured
@@ -635,6 +664,7 @@ class DocForgePipeline:
                 storage_logger.info(f"Enriched chunks for document {document_uuid}")
             
             # Convert ChunkData objects to dicts for storage
+            doc_title = processed_document.document_metadata.get('title', '')
             chunk_dicts = []
             for chunk in chunks:
                 chunk_dict = {
@@ -643,21 +673,30 @@ class DocForgePipeline:
                         'word_count': chunk.metadata.word_count,
                         'character_count': chunk.metadata.character_count,
                         'chunk_type': chunk.chunk_type.value if hasattr(chunk.chunk_type, 'value') else str(chunk.chunk_type),
+                        # Summary fields stored in metadata JSON for retrieval
+                        'doc_summary': chunk.doc_summary,
+                        'section_summary': chunk.section_summary,
+                        'section_path': chunk.section_path,
                     },
                     'relationships': chunk.relationships
                 }
-                
-                # Add enriched content if present
-                if hasattr(chunk, 'enriched_content') and chunk.enriched_content:
+
+                # Build enriched embedding text when summaries are available
+                if summaries is not None:
+                    chunk_dict['enriched_content'] = DocumentChunker.build_enriched_text(
+                        chunk, title=doc_title
+                    )
+                elif hasattr(chunk, 'enriched_content') and chunk.enriched_content:
+                    # Legacy context-enrichment path
                     chunk_dict['enriched_content'] = chunk.enriched_content
-                
+
                 # Add original content if stored in metadata
                 if hasattr(chunk.metadata, 'original_content') and chunk.metadata.original_content:
                     chunk_dict['metadata']['original_content'] = chunk.metadata.original_content
-                
+
                 if hasattr(chunk.metadata, 'enriched'):
                     chunk_dict['enrichment_metadata'] = {'enriched': chunk.metadata.enriched}
-                
+
                 chunk_dicts.append(chunk_dict)
             
             # Store chunks in database

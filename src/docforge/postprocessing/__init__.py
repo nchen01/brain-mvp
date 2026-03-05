@@ -9,19 +9,23 @@ from .chunker import DocumentChunker
 from .schemas import (
     ChunkData,
     ChunkMetadata,
+    DocumentSummaries,
     PostProcessingResult,
     PostProcessingConfig,
     ProcessingMethod,
-    ChunkingStrategy
+    ChunkingStrategy,
 )
+from .summarizer import SummarizationService
 
 __all__ = [
     'PostProcessingRouter',
     'DocumentChunker',
     'ChunkData',
     'ChunkMetadata',
+    'DocumentSummaries',
     'PostProcessingResult',
     'PostProcessingConfig',
     'ProcessingMethod',
-    'ChunkingStrategy'
+    'ChunkingStrategy',
+    'SummarizationService',
 ]
