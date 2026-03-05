@@ -14,9 +14,10 @@ The following diagram illustrates the complete journey of a document from upload
 graph TD
     A[User Upload] -->|PDF| B[MinerU Processor]
     B -->|Raw Text/Tables/Images| B5[Abbreviation Expander]
-    B5 -->|Expanded Text| C[Document Chunker]
-    C -->|Strategy: Recursive/Semantic/Hybrid| D[Context Enricher]
-    D -->|Enriched Chunks| E[Multi-Tier Storage]
+    B5 -->|Expanded Text| S[Summarization Service]
+    S -->|DocumentSummaries| C[Document Chunker]
+    C -->|Chunks + summaries| D[Enriched Text Builder]
+    D -->|enriched_content| E[Multi-Tier Storage]
 
     subgraph "Extraction Layer"
     B --> B1[MinerU API - Primary]
@@ -37,12 +38,19 @@ graph TD
     B5 --> B5c[Inline Expansion]
     end
 
+    subgraph "Summarization Stage"
+    S --> S1[LLM mode: Anthropic / OpenAI]
+    S --> S2[Extractive mode: TF-IDF]
+    S1 --> S3[doc_summary 2-3 sentences]
+    S1 --> S4[section_summaries per heading]
+    end
+
     subgraph "RAG Preparation"
     C --> C1[Recursive]
     C --> C2[Fixed-Size]
     C --> C3[Semantic]
     C --> C4[Hybrid Structure-Aware]
-    D --> D1[Anthropic-style Context]
+    D --> D1[title + doc_summary + section_path + section_summary + content]
     end
 
     subgraph "Hybrid Chunking Pipeline"
@@ -55,7 +63,7 @@ graph TD
 
     subgraph "Storage Layer"
     E --> E1[(Postgres: Metadata)]
-    E --> E2[(SQLite: Chunks)]
+    E --> E2[(SQLite: Chunks + enriched_content)]
     E --> E3[(Redis: Cache)]
     end
 ```
@@ -126,7 +134,43 @@ curl "http://localhost:8088/api/v1/documents/{document_id}/abbreviations"
 - `PROCESSING__ENABLE_ABBREVIATION_EXPANSION=true` (enabled by default)
 - `PROCESSING__ABBREVIATION_CONFIDENCE_THRESHOLD=0.7`
 
-### 3. Chunking Phase
+### 3. Summarization Phase
+
+The `SummarizationService` runs as a discrete, testable stage between abbreviation expansion and chunking. It produces a `DocumentSummaries` object that is passed into the chunker, so every chunk automatically carries context strings from both the document level and its own section.
+
+**Why this matters for RAG:** A retrieval query like "what is the budget for Project X?" may land in a chunk that only says "The budget was approved in Q3." Without context, this chunk is ambiguous. With a doc summary attached, the embedding represents "This document covers Project X financial planning… the budget was approved in Q3" — a far stronger match.
+
+**Two modes:**
+
+| Mode | How it works | API calls |
+|------|-------------|-----------|
+| `llm` (default) | Sends doc + section text to Claude Haiku or OpenAI. Falls back to headings + head/tail excerpt for large docs. | Yes |
+| `extractive` | Scores sentences with TF-IDF, picks top-N as summary. | No |
+
+**What gets generated:**
+- **`doc_summary`**: 2–3 sentence overview of the whole document — shared by every chunk.
+- **`section_summaries`**: 1–2 sentence summary per heading section, only for sections exceeding `section_summary_min_tokens`. Smaller sections are skipped to save cost.
+
+**Enriched embedding text** built per chunk before storage:
+```
+Document: {title}. Overall summary: {doc_summary}. Section: {section_path}. Section summary: {section_summary}. Content: {raw_text}
+```
+
+**Configuration:**
+```bash
+PROCESSING__SUMMARIZATION__ENABLED=false           # off by default
+PROCESSING__SUMMARIZATION__MODE=llm                # or extractive
+PROCESSING__SUMMARIZATION__API_PROVIDER=anthropic  # or openai
+PROCESSING__SUMMARIZATION__MODEL_NAME=claude-haiku-4-5-20251001
+PROCESSING__SUMMARIZATION__MAX_DOC_TOKENS_FOR_DIRECT_SUMMARY=8000
+PROCESSING__SUMMARIZATION__SECTION_SUMMARY_MIN_TOKENS=200
+```
+
+**Module:** `src/docforge/postprocessing/summarizer.py`
+**Schema:** `DocumentSummaries` in `src/docforge/postprocessing/schemas.py`
+**Chunk fields added:** `ChunkData.doc_summary`, `ChunkData.section_summary`, `ChunkData.section_path`
+
+### 4. Chunking Phase
 Documents are split into manageable "chunks" using configurable strategies:
 - **Recursive**: Respects natural boundaries like paragraphs and sentences.
 - **Semantic**: Uses AI embeddings to find logical breaks in meaning.
@@ -172,8 +216,10 @@ Presets are available via `HybridChunkingConfig.for_short_documents()` and `Hybr
 - Full element ID and page number traceability back to MinerU output
 - Previous/next chunk relationship linking
 
-### 4. Context Enrichment Phase
+### 5. Context Enrichment Phase
 To solve the "lost in translation" problem in RAG, each chunk is optionally enriched with document-level context. This provides the LLM with the "big picture" for every small piece of text, significantly improving retrieval accuracy.
+
+> **Note:** When the Summarization Stage is enabled, the enriched embedding text built from summaries replaces the LLM context enrichment step — both ultimately populate the `enriched_content` column, but the summarization path is significantly cheaper (one LLM call per doc vs. one per chunk).
 
 ---
 
@@ -217,8 +263,8 @@ Stores the high-level document information, lineage, and processing history.
 Stores the actual text segments, their embeddings, and enrichment content.
 - **Table**: `document_chunks`
   - `original_content`: The raw text segment.
-  - `enriched_content`: The text + document context.
-  - `chunk_metadata`: Index, strategy, and token counts.
+  - `enriched_content`: Full enriched embedding string (title + summaries + content), used by the vector store.
+  - `chunk_metadata` (JSON): Index, strategy, token counts, plus `doc_summary`, `section_summary`, and `section_path` when summarization is enabled.
 
 ---
 
@@ -254,7 +300,10 @@ Tested configurations:
 ### Environment Configuration
 Key settings can be adjusted in `docker-compose.yml` or `docker-compose.gpu.yml`:
 - `PROCESSING__DEFAULT_CHUNKING_STRATEGY`: Default strategy (recursive/semantic/hybrid).
-- `OPENAI_API_KEY`: Required for semantic chunking and enrichment.
+- `PROCESSING__SUMMARIZATION__ENABLED`: Enable LLM/extractive summarization (`true`/`false`, default `false`).
+- `PROCESSING__SUMMARIZATION__MODE`: `llm` or `extractive`.
+- `ANTHROPIC_API_KEY`: Required for LLM summarization with Anthropic provider.
+- `OPENAI_API_KEY`: Required for semantic chunking, context enrichment, or LLM summarization with OpenAI provider.
 - `MINERU_API_URL`: MinerU service endpoint (default: `http://mineru-api:8080`).
 - `MINERU_API_ENABLED`: Enable/disable MinerU API (`true`/`false`).
 - `MINERU_BACKEND`: Backend type (pipeline, vlm-http-client, hybrid-http-client).

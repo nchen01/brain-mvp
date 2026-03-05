@@ -10,6 +10,7 @@ A production-ready document processing system that extracts text from PDF docume
 - **High-Precision RAG Pipeline**:
   - **Multiple Chunking Strategies**: Recursive, Fixed-size, Semantic, and Hybrid Structure-Aware chunking.
   - **Hybrid Structure-Aware Chunking**: Normalizes documents into a hierarchical section model, routes sections by length (SHORT/MEDIUM/LONG), and chunks respecting section, paragraph, and sentence boundaries.
+  - **Summarization Stage**: Optional LLM-based (Anthropic/OpenAI) or extractive document and section summarization, injected between parsing and chunking to enrich every chunk with doc-level and section-level context.
   - **Context Enrichment**: Anthropic-style context-enriched chunking for improved retrieval accuracy.
 - **Individual Document Management**: Support for individual document deletion with full cleanup of associated chunks and metadata.
 - **Robust Storage Architecture**: Multi-tier storage system supporting both SQLite (development) and PostgreSQL (production).
@@ -23,15 +24,17 @@ A production-ready document processing system that extracts text from PDF docume
 ### Processing Pipeline
 1. **Upload**: Document received via Web UI or REST API.
 2. **Extraction**: `MinerUProcessor` (primary) or `AdvancedPDFProcessor` (fallback) extracts text, tables, and images using the best available backend.
-3. **Chunking**: Documents are split into chunks using configurable strategies (Recursive, Semantic, etc.).
-4. **Enrichment**: Chunks are optionally enriched with document-level context using LLMs.
-5. **Storage**: Content is stored across specialized databases (Raw, Post, Meta, and Chunks).
+3. **Abbreviation Expansion**: Acronyms and abbreviations are expanded inline before chunking.
+4. **Summarization** *(optional)*: `SummarizationService` generates a 2–3 sentence document summary and per-section summaries, which are attached to every downstream chunk.
+5. **Chunking**: Documents are split into chunks using configurable strategies (Recursive, Semantic, Hybrid, etc.). Each chunk carries `doc_summary`, `section_summary`, and `section_path`.
+6. **Enrichment**: An enriched embedding string (`Document: … Summary: … Section: … Content: …`) is built per chunk and stored as `enriched_content` for the vector store.
+7. **Storage**: Content is stored across specialized databases (Raw, Post, Meta, and Chunks).
 
 ### Database Schema
 The system uses a comprehensive schema to track document lineage and processing history:
 - `document_lineage`: Tracks document versions and history.
 - `raw_document_register`: Stores original file information and status.
-- `document_chunks`: Stores processed chunks with strategy metadata and enrichment content.
+- `document_chunks`: Stores processed chunks with strategy metadata, summary fields (`doc_summary`, `section_summary`, `section_path` in `chunk_metadata` JSON), and enriched embedding content.
 - `meta_document_register`: Stores structural metadata and processing status.
 
 ---
@@ -40,7 +43,7 @@ The system uses a comprehensive schema to track document lineage and processing 
 
 ### Prerequisites
 - Docker and Docker Compose
-- OpenAI API Key (optional, for semantic chunking and context enrichment)
+- OpenAI or Anthropic API Key (optional — required only for semantic chunking, context enrichment, or LLM summarization)
 
 ### Installation & Setup
 
@@ -53,8 +56,10 @@ The system uses a comprehensive schema to track document lineage and processing 
 2. **Configure Environment**:
    Create a `.env` file or set environment variables:
    ```bash
-   OPENAI_API_KEY=your_api_key_here
+   OPENAI_API_KEY=your_key_here          # optional
+   ANTHROPIC_API_KEY=your_key_here       # optional, for LLM summarization
    PROCESSING__DEFAULT_CHUNKING_STRATEGY=recursive
+   PROCESSING__SUMMARIZATION__ENABLED=false   # set true to enable summarization
    ```
 
 3. **Start the System**:
@@ -119,6 +124,32 @@ chunk_overlap: 50              # words
 ```
 
 **Module location:** `src/docforge/postprocessing/hybrid_chunking/`
+
+### Summarization Stage
+The summarization stage runs between parsing and chunking, producing a `DocumentSummaries` object that is threaded through to every chunk produced downstream.
+
+**Modes:**
+- **`llm`** (default): Calls an LLM (Anthropic Claude Haiku or OpenAI) to produce 2–3 sentence document summaries and 1–2 sentence section summaries for large sections.
+- **`extractive`**: Pure-Python TF-IDF sentence scorer — no API calls, zero latency cost.
+
+**Enriched embedding text format:**
+```
+Document: {title}. Overall summary: {doc_summary}. Section: {section_path}. Section summary: {section_summary}. Content: {raw_text}
+```
+
+**Configuration** (env vars or `settings.py`):
+```bash
+PROCESSING__SUMMARIZATION__ENABLED=true
+PROCESSING__SUMMARIZATION__MODE=llm                      # or extractive
+PROCESSING__SUMMARIZATION__MODEL_NAME=claude-haiku-4-5-20251001
+PROCESSING__SUMMARIZATION__API_PROVIDER=anthropic        # or openai
+PROCESSING__SUMMARIZATION__MAX_DOC_TOKENS_FOR_DIRECT_SUMMARY=8000
+PROCESSING__SUMMARIZATION__SECTION_SUMMARY_MIN_TOKENS=200
+```
+
+Summarization is **off by default** — existing deployments are unaffected until opted in.
+
+**Module location:** `src/docforge/postprocessing/summarizer.py`
 
 ### Context Enrichment
 Inspired by Anthropic's "Contextual Retrieval", the system can enrich each chunk with document-level context. This significantly improves retrieval accuracy by providing the LLM with the necessary background for each individual chunk.
