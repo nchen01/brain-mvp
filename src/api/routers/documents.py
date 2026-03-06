@@ -944,6 +944,55 @@ async def download_abbreviation_report(
         raise HTTPException(status_code=500, detail=f"Failed to download report: {str(e)}")
 
 
+@router.get("/{document_id}/summary")
+async def get_document_summary(
+    document_id: str,
+    current_user: Optional[UserInfo] = Depends(get_current_user_optional)
+):
+    """
+    Get document and section summaries generated during processing.
+    """
+    try:
+        chunk_storage = ChunkStorage(db_path="data/brain_mvp.db")
+        chunks = chunk_storage.get_chunks_by_document(document_id, include_enriched=False)
+
+        if not chunks:
+            return {
+                "document_id": document_id,
+                "doc_summary": None,
+                "section_summaries": [],
+                "message": "No chunks found for this document"
+            }
+
+        doc_summary = None
+        section_summaries = []
+        seen_sections = set()
+
+        for chunk in chunks:
+            meta = chunk.get('metadata', {})
+            if doc_summary is None and meta.get('doc_summary'):
+                doc_summary = meta['doc_summary']
+            sec = meta.get('section_summary')
+            sec_path = meta.get('section_path', '')
+            if sec and sec not in seen_sections:
+                seen_sections.add(sec)
+                section_summaries.append({
+                    'section_path': sec_path,
+                    'summary': sec
+                })
+
+        return {
+            "document_id": document_id,
+            "doc_summary": doc_summary,
+            "section_summaries": section_summaries,
+            "section_count": len(section_summaries)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting document summary: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get summary: {str(e)}")
+
+
 @router.get("/{document_id}/download")
 async def download_document(
     document_id: str,
@@ -1710,6 +1759,25 @@ async def process_document_async(
                     logger.warning(f"Abbreviation expansion failed, continuing without expansion: {abbrev_error}")
                     # Continue with original document if expansion fails
 
+            # Summarization stage (between abbreviation expansion and chunking)
+            summaries = None
+            try:
+                from docforge.postprocessing.summarizer import SummarizationService
+                summarizer = SummarizationService(
+                    enabled=True,
+                    mode=os.getenv('PROCESSING__SUMMARIZATION__MODE', 'llm'),
+                    api_provider=os.getenv('PROCESSING__SUMMARIZATION__API_PROVIDER', 'openai'),
+                    model_name=os.getenv('PROCESSING__SUMMARIZATION__MODEL_NAME', 'gpt-4o-mini'),
+                    max_doc_tokens_for_direct_summary=int(os.getenv('PROCESSING__SUMMARIZATION__MAX_DOC_TOKENS_FOR_DIRECT_SUMMARY', 8000)),
+                    section_summary_min_tokens=int(os.getenv('PROCESSING__SUMMARIZATION__SECTION_SUMMARY_MIN_TOKENS', 200)),
+                )
+                summaries = summarizer.summarize_document(document_for_chunking)
+                logger.info(f"Summarized document {document_id}: doc_summary={bool(summaries.doc_summary)}, sections={len(summaries.section_summaries)}")
+                print(f"DEBUG: Summarization complete. doc_summary preview: {summaries.doc_summary[:120] if summaries.doc_summary else 'empty'}", flush=True)
+            except Exception as summ_err:
+                logger.warning(f"Summarization failed, continuing without: {summ_err}")
+                print(f"DEBUG: Summarization failed: {summ_err}", flush=True)
+
             # Perform chunking
             print(f"DEBUG: About to perform chunking with strategy {strategy_name}", flush=True)
             print(f"DEBUG: document_for_chunking type: {type(document_for_chunking)}", flush=True)
@@ -1719,7 +1787,7 @@ async def process_document_async(
             print(f"DEBUG: Creating DocumentChunker", flush=True)
             chunker = DocumentChunker(strategy=strategy, config=chunker_config)
             print(f"DEBUG: DocumentChunker created, calling chunk_document", flush=True)
-            chunks = chunker.chunk_document(document_for_chunking)
+            chunks = chunker.chunk_document(document_for_chunking, summaries=summaries)
             print(f"DEBUG: chunk_document returned {len(chunks)} chunks", flush=True)
 
             logger.info(f"Generated {len(chunks)} chunks")
@@ -1768,8 +1836,9 @@ async def process_document_async(
             upload_timestamp = version_info.timestamp
             if hasattr(upload_timestamp, "isoformat"):
                 upload_timestamp = upload_timestamp.isoformat()
-            
+
             ingestion_ts = datetime.utcnow().isoformat()
+            doc_title = result.output.document_metadata.get('title', filename)
             chunk_dict['metadata'].update({
                 'document_filename': filename,
                 'document_file_size': version_info.file_size,
@@ -1783,19 +1852,27 @@ async def process_document_async(
                 'abbreviations_expanded': len(abbreviation_expansions),
                 # Standardised metadata for retrieval quality inspection
                 'doc_id': document_id,
-                'title': result.output.document_metadata.get('title', filename),
-                'section_path': (getattr(chunk, 'position', None) or {}).get('heading_path', [])
-                                or (getattr(chunk, 'position', None) or {}).get('heading_context', ''),
+                'doc_type': os.path.splitext(filename)[1].lower().lstrip('.') or 'unknown',
+                'title': doc_title,
+                'section_path': chunk.section_path or (getattr(chunk, 'position', None) or {}).get('heading_context', ''),
                 'page_range': _format_page_range(getattr(chunk.metadata, 'page_numbers', [])),
                 'ingestion_timestamp': ingestion_ts,
+                'tags': [],
                 # Propagate position data from ChunkData
                 'page_numbers': getattr(chunk.metadata, 'page_numbers', []),
                 'source_elements': getattr(chunk.metadata, 'source_elements', []),
+                # Summary fields
+                'doc_summary': chunk.doc_summary,
+                'section_summary': chunk.section_summary,
             })
-            
-            if enriched_content:
+
+            # Build enriched embedding text when summaries are available
+            if summaries is not None:
+                chunk_dict['enriched_content'] = DocumentChunker.build_enriched_text(chunk, title=doc_title)
+                chunk_dict['enrichment_metadata'] = {'enriched': True, 'method': 'summarization'}
+            elif enriched_content:
                 chunk_dict['enriched_content'] = enriched_content
-                chunk_dict['enrichment_metadata'] = {'enriched': True}
+                chunk_dict['enrichment_metadata'] = {'enriched': True, 'method': 'context_enrichment'}
                 
             chunk_dicts.append(chunk_dict)
             
@@ -1809,14 +1886,28 @@ async def process_document_async(
         )
         logger.info(f"Stored {len(stored_chunk_ids)} chunks for document {document_id}")
 
-        # Stage 4: RAG Preparation
+        # Stage 4: Embed chunks and persist vectors for retrieval
         processing_tasks[task_id].update({
             'stage': 'rag_preparation',
             'progress': 90.0
         })
-        
-        # Prepare for RAG (LightRAG integration)
-        # This would create meta documents and prepare for search
+        try:
+            from docforge.rag.embeddings import EmbeddingManager
+            embedding_manager = EmbeddingManager()
+            # Embed enriched text when available, otherwise raw content
+            texts = [d.get('enriched_content') or d.get('content', '') for d in chunk_dicts]
+            if texts:
+                raw_embeddings = embedding_manager.embedder.encode(texts, show_progress_bar=False)
+                embeddings_by_id = {
+                    f"chunk_{document_id}_{i}": emb.tolist()
+                    for i, emb in enumerate(raw_embeddings)
+                }
+                stored_count = chunk_storage.store_embeddings(embeddings_by_id)
+                logger.info(f"Stored {stored_count} embeddings for document {document_id}")
+                print(f"DEBUG: Stored {stored_count} chunk embeddings for RAG retrieval", flush=True)
+        except Exception as emb_err:
+            logger.warning(f"Embedding stage failed (non-fatal): {emb_err}")
+            print(f"DEBUG: Embedding stage failed: {emb_err}", flush=True)
         
         # Complete
         processing_tasks[task_id].update({

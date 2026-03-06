@@ -25,11 +25,16 @@ services:
       # Internal container network uses port 8080 regardless of external mapping
       - MINERU_API_URL=http://mineru-api:8080
       - MINERU_API_ENABLED=true
-      - MINERU_BACKEND=vlm-http-client
-      # VLM server URL for vlm-http-client backend (Docker Model Runner)
-      # Docker Model Runner requires /engines/llama.cpp path prefix
-      - MINERU_SERVER_URL=http://model-runner.docker.internal/engines/llama.cpp
+      - MINERU_BACKEND=pipeline
+      # RAG retrieval tuning — adjust without redeploying code
+      # top_k: try 5, 8, 10, 20 — quality typically plateaus around 10
+      - RAG__TOP_K=${RAG__TOP_K:-10}
+      # similarity_threshold: 0.0=off, 0.3=loose filter, 0.5=strict
+      - RAG__SIMILARITY_THRESHOLD=${RAG__SIMILARITY_THRESHOLD:-0.0}
+      # neighbor_window: ±N adjacent chunks fetched per hit (1 recommended)
+      - RAG__NEIGHBOR_WINDOW=${RAG__NEIGHBOR_WINDOW:-1}
       - HF_HOME=/app/data/.cache/huggingface
+      - SENTENCE_TRANSFORMERS_HOME=/app/data/.cache/sentence-transformers
     volumes:
       - .:/app
       - ./data:/app/data

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 import logging
 import os
 
@@ -182,3 +183,64 @@ async def delete_document_chunks(doc_uuid: str):
     except Exception as e:
         logger.error(f"Error deleting chunks for document {doc_uuid}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ── Semantic search ───────────────────────────────────────────────────────────
+
+class ChunkSearchRequest(BaseModel):
+    """Semantic chunk search request.
+
+    Tuning guidance
+    ---------------
+    top_k                Start at 10. Try 5 (fast/precise) → 8 → 10 → 20 (broad).
+                         Quality typically plateaus around 10; above 15 adds noise.
+    similarity_threshold Start at 0.0 (no filter). Raise to 0.3 to drop off-topic
+                         chunks, 0.5 for high-precision retrieval.
+    neighbor_window      1 = ±1 adjacent chunk (recommended). Prevents cliff-edge
+                         context loss. Use 0 to isolate scored hits only.
+    """
+    query: str = Field(..., description="Natural language query")
+    top_k: int = Field(
+        default=10, ge=1, le=50,
+        description="Number of top-scored chunks to return. Try 5, 8, 10, 20."
+    )
+    similarity_threshold: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Minimum cosine similarity (0.0 = off, 0.3–0.5 typical)."
+    )
+    neighbor_window: int = Field(
+        default=1, ge=0, le=3,
+        description="±N adjacent chunks fetched per hit for context continuity."
+    )
+    doc_filter: Optional[List[str]] = Field(
+        default=None,
+        description="Restrict search to these doc_uuid values."
+    )
+
+
+@router.post("/search")
+async def search_chunks(request: ChunkSearchRequest) -> Dict[str, Any]:
+    """Semantic similarity search over all embedded chunks.
+
+    Returns scored **hits** (top-k) plus a **context_chunks** list that
+    includes each hit's ±neighbor_window adjacent chunks in document order —
+    ready to pass directly to an LLM.
+
+    Use `top_k_options`, `similarity_threshold_options`, and
+    `neighbor_window_options` in the response to drive UI tuning controls.
+    """
+    try:
+        from docforge.rag.retriever import get_retriever
+        retriever = get_retriever(
+            db_path=os.getenv("STORAGE__CHUNK_DB_PATH", "data/brain_mvp.db")
+        )
+        return retriever.retrieve(
+            query=request.query,
+            top_k=request.top_k,
+            similarity_threshold=request.similarity_threshold,
+            neighbor_window=request.neighbor_window,
+            doc_filter=request.doc_filter,
+        )
+    except Exception as e:
+        logger.error(f"Chunk search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

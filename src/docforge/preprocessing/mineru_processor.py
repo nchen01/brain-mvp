@@ -111,22 +111,25 @@ class MinerUProcessor(BaseDocumentProcessor):
         if not self.api_enabled:
             return False
 
-        # Use cached result if available
-        if self._api_available is not None:
-            return self._api_available
+        # Use cached result only if confirmed available (True).
+        # Do NOT cache False — MinerU may still be loading models at startup,
+        # so a failed check must be re-tried on the next request.
+        if self._api_available is True:
+            return True
 
         try:
             with httpx.Client(timeout=5.0) as client:
                 # MinerU API doesn't have /health, check /openapi.json instead
                 response = client.get(f"{self.api_url}/openapi.json")
-                self._api_available = response.status_code == 200
-                if self._api_available:
+                if response.status_code == 200:
+                    self._api_available = True
                     logger.info("MinerU API is available")
                 else:
                     logger.warning(f"MinerU API returned status {response.status_code}")
+                    return False
         except Exception as e:
             logger.warning(f"MinerU API not available: {e}")
-            self._api_available = False
+            return False
 
         return self._api_available
 

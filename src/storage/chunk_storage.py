@@ -51,15 +51,22 @@ class ChunkStorage:
                     chunk_metadata TEXT NOT NULL, -- JSON
                     enrichment_metadata TEXT, -- JSON
                     chunk_relationships TEXT, -- JSON
+                    embedding TEXT,            -- JSON float array (sentence-transformers)
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
             """)
-            
+
+            # Migrate existing databases that predate the embedding column
+            try:
+                conn.execute("ALTER TABLE document_chunks ADD COLUMN embedding TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Create indexes
             conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc_uuid ON document_chunks(doc_uuid)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_strategy ON document_chunks(chunking_strategy)")
-            
+
             conn.commit()
         finally:
             conn.close()
@@ -352,6 +359,98 @@ class ChunkStorage:
         except sqlite3.Error as e:
             logger.error(f"Error getting statistics: {e}")
             return {'total_chunks': 0, 'by_strategy': {}, 'enriched_chunks': 0}
+        finally:
+            conn.close()
+
+    # ===== Embedding Storage Methods =====
+
+    def store_embeddings(self, embeddings_by_chunk_id: Dict[str, List[float]]) -> int:
+        """Persist embedding vectors for a batch of chunks. Returns count updated."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            count = 0
+            for chunk_id, embedding in embeddings_by_chunk_id.items():
+                cursor.execute(
+                    "UPDATE document_chunks SET embedding = ?, updated_at = ? WHERE chunk_id = ?",
+                    (json.dumps(embedding), datetime.now().isoformat(), chunk_id)
+                )
+                count += cursor.rowcount
+            conn.commit()
+            logger.info(f"Stored embeddings for {count} chunks")
+            return count
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error(f"Error storing embeddings: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_embeddings_for_search(
+        self,
+        doc_uuids: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Return (chunk_id, doc_uuid, chunk_index, embedding) for all embedded chunks.
+
+        Optionally restricted to a list of doc_uuids for scoped search.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if doc_uuids:
+                placeholders = ','.join('?' * len(doc_uuids))
+                cursor.execute(
+                    f"SELECT chunk_id, doc_uuid, chunk_index, embedding "
+                    f"FROM document_chunks "
+                    f"WHERE embedding IS NOT NULL AND doc_uuid IN ({placeholders})",
+                    doc_uuids
+                )
+            else:
+                cursor.execute(
+                    "SELECT chunk_id, doc_uuid, chunk_index, embedding "
+                    "FROM document_chunks WHERE embedding IS NOT NULL"
+                )
+            rows = cursor.fetchall()
+            return [
+                {
+                    'chunk_id': row['chunk_id'],
+                    'doc_uuid': row['doc_uuid'],
+                    'chunk_index': row['chunk_index'],
+                    'embedding': json.loads(row['embedding']),
+                }
+                for row in rows
+            ]
+        except sqlite3.Error as e:
+            logger.error(f"Error loading embeddings for search: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def get_neighbor_chunks(
+        self,
+        doc_uuid: str,
+        chunk_index: int,
+        window: int = 1
+    ) -> List[Dict[str, Any]]:
+        """Return chunks adjacent to chunk_index within the same document.
+
+        Fetches chunk_index in [chunk_index - window, chunk_index + window].
+        Callers deduplicate by chunk_id since this range includes the hit itself.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT * FROM document_chunks "
+                "WHERE doc_uuid = ? AND chunk_index BETWEEN ? AND ? "
+                "ORDER BY chunk_index",
+                (doc_uuid, chunk_index - window, chunk_index + window)
+            )
+            rows = cursor.fetchall()
+            return [self._row_to_chunk_dict(row, include_enriched=True) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Error fetching neighbor chunks: {e}")
+            return []
         finally:
             conn.close()
 

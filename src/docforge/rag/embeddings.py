@@ -487,14 +487,20 @@ class EmbeddingManager:
         return embeddings
     
     async def embed_components(
-        self, 
-        components: List[Dict[str, Any]], 
+        self,
+        components: List[Dict[str, Any]],
         text_field: str = 'content'
     ) -> List[Dict[str, Any]]:
-        """Generate embeddings for document components."""
+        """Generate embeddings for document components.
+
+        Automatically uses ``enriched_content`` when present on a component so
+        that contextual embedding text (document title + summaries + chunk text)
+        is always embedded instead of raw chunk text.
+        """
         try:
-            # Extract texts
-            texts = [comp.get(text_field, '') for comp in components]
+            # Prefer enriched_content for embedding when available — this is the
+            # contextual embedding string built by DocumentChunker.build_enriched_text.
+            texts = [comp.get('enriched_content') or comp.get(text_field, '') for comp in components]
             
             # Generate embeddings
             embeddings = await self.embed_texts(texts)
@@ -684,10 +690,9 @@ class EmbeddingManager:
     def __del__(self):
         """Cleanup when object is destroyed."""
         try:
-            # Only save cache if we're not shutting down
             import sys
             if hasattr(sys, 'meta_path') and sys.meta_path is not None:
-                self._save_cache()
+                if hasattr(self, '_embedding_cache'):
+                    self._save_cache()
         except Exception:
-            # Silently ignore errors during shutdown
             pass

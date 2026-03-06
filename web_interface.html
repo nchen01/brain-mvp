@@ -793,6 +793,7 @@
                         <button class="tab-button active" onclick="switchTab('extraction')">Extraction</button>
                         <button class="tab-button" onclick="switchTab('chunks')">Chunks</button>
                         <button class="tab-button" onclick="switchTab('abbreviations')">Abbreviations</button>
+                        <button class="tab-button" onclick="switchTab('summary')">Summary</button>
                     </div>
 
                     <!-- Extraction View -->
@@ -859,6 +860,19 @@
                             <button class="download-button" onclick="downloadAbbreviations('comparison')" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">
                                 🔄 Download Comparison (Pre/Post)
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Summary View -->
+                    <div id="summaryView" class="tab-content">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4>🧠 Document Summary</h4>
+                            <div id="summaryStats" style="font-size: 0.9em; color: #6c757d;"></div>
+                        </div>
+                        <div id="summaryContent">
+                            <div style="text-align: center; padding: 20px; color: #6c757d;">
+                                Loading summary...
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1378,7 +1392,66 @@
                     loadChunks();
                 } else if (tabName === 'abbreviations') {
                     loadAbbreviations();
+                } else if (tabName === 'summary') {
+                    loadSummary();
                 }
+            }
+        }
+
+        // Summary Handling
+        async function loadSummary() {
+            const summaryContent = document.getElementById('summaryContent');
+            const summaryStats = document.getElementById('summaryStats');
+
+            try {
+                const response = await fetch(`/api/v1/documents/${currentDocumentId}/summary`);
+                if (!response.ok) throw new Error(`Failed to load summary: ${response.statusText}`);
+
+                const data = await response.json();
+
+                if (!data.doc_summary && data.section_summaries.length === 0) {
+                    summaryContent.innerHTML = `
+                        <div style="text-align:center;padding:40px;color:#6c757d;">
+                            <div style="font-size:3em;margin-bottom:15px;">📄</div>
+                            <h4>No Summary Available</h4>
+                            <p>This document was processed without summarization, or summarization did not produce output.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (summaryStats) {
+                    summaryStats.textContent = `${data.section_count} section${data.section_count !== 1 ? 's' : ''}`;
+                }
+
+                let html = '';
+
+                if (data.doc_summary) {
+                    html += `
+                        <div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);border-radius:10px;padding:20px;margin-bottom:20px;">
+                            <h5 style="margin-bottom:10px;color:#0d47a1;">📋 Document Summary</h5>
+                            <p style="line-height:1.7;color:#1a237e;">${escapeHtml(data.doc_summary)}</p>
+                        </div>
+                    `;
+                }
+
+                if (data.section_summaries.length > 0) {
+                    html += `<h5 style="margin-bottom:12px;color:#495057;">Section Summaries</h5>`;
+                    for (const sec of data.section_summaries) {
+                        html += `
+                            <div style="background:white;border:1px solid #dee2e6;border-radius:8px;padding:15px;margin-bottom:12px;">
+                                ${sec.section_path ? `<div style="font-size:0.8em;color:#6c757d;margin-bottom:6px;font-family:monospace;">${escapeHtml(sec.section_path)}</div>` : ''}
+                                <p style="line-height:1.6;color:#343a40;margin:0;">${escapeHtml(sec.summary)}</p>
+                            </div>
+                        `;
+                    }
+                }
+
+                summaryContent.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading summary:', error);
+                summaryContent.innerHTML = `<div class="error-message">Failed to load summary: ${error.message}</div>`;
             }
         }
 
