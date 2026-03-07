@@ -352,6 +352,247 @@
             display: block;
         }
 
+        /* Ask Tab */
+        .ask-answer-box {
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+            border: 1px solid #bae6fd;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            line-height: 1.75;
+            font-size: 0.97em;
+            color: #0c4a6e;
+            white-space: pre-wrap;
+        }
+
+        .ask-answer-label {
+            font-size: 0.78em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #0284c7;
+            margin-bottom: 8px;
+        }
+
+        .ask-confidence {
+            display: inline-block;
+            background: #0284c7;
+            color: white;
+            font-size: 0.78em;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 20px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .ask-sources-label {
+            font-size: 0.82em;
+            font-weight: 700;
+            color: #6c757d;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .ask-source-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-left: 4px solid #4facfe;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            font-size: 0.88em;
+        }
+
+        .ask-source-path {
+            font-family: monospace;
+            font-size: 0.82em;
+            color: #6c757d;
+            margin-bottom: 6px;
+        }
+
+        .ask-source-content {
+            color: #343a40;
+            line-height: 1.55;
+        }
+
+        .ask-limitations {
+            margin-top: 14px;
+            font-size: 0.82em;
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .ask-paths {
+            margin-top: 10px;
+            font-size: 0.78em;
+            color: #94a3b8;
+        }
+
+        .ask-error {
+            background: #fff5f5;
+            border: 1px solid #fed7d7;
+            border-radius: 10px;
+            padding: 16px 20px;
+            color: #c53030;
+            font-size: 0.9em;
+        }
+
+        /* Search Tab */
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            align-items: flex-end;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            font-size: 1em;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 48px;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .search-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .search-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.3);
+        }
+
+        .search-options {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 0.88em;
+            color: #6c757d;
+        }
+
+        .search-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .search-options input[type="number"] {
+            width: 70px;
+            padding: 4px 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.95em;
+        }
+
+        .search-options input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        .search-results-list {
+            display: grid;
+            gap: 12px;
+            max-height: 580px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .search-result-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .search-result-card:hover {
+            border-color: #4facfe;
+            box-shadow: 0 4px 12px rgba(79, 172, 254, 0.15);
+        }
+
+        .search-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+
+        .search-result-score {
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: white;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.82em;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .search-result-meta {
+            font-size: 0.8em;
+            color: #6c757d;
+            font-family: monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-result-content {
+            font-size: 0.9em;
+            line-height: 1.6;
+            color: #343a40;
+            max-height: 130px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .search-result-content::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 32px;
+            background: linear-gradient(transparent, white);
+        }
+
+        .search-result-footer {
+            margin-top: 10px;
+            font-size: 0.78em;
+            color: #adb5bd;
+            font-family: monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6c757d;
+        }
+
         /* Chunk Cards */
         .chunks-grid {
             display: grid;
@@ -794,6 +1035,8 @@
                         <button class="tab-button" onclick="switchTab('chunks')">Chunks</button>
                         <button class="tab-button" onclick="switchTab('abbreviations')">Abbreviations</button>
                         <button class="tab-button" onclick="switchTab('summary')">Summary</button>
+                        <button class="tab-button" onclick="switchTab('search')">Search</button>
+                        <button class="tab-button" onclick="switchTab('ask')">Ask</button>
                     </div>
 
                     <!-- Extraction View -->
@@ -860,6 +1103,62 @@
                             <button class="download-button" onclick="downloadAbbreviations('comparison')" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">
                                 🔄 Download Comparison (Pre/Post)
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Ask View -->
+                    <div id="askView" class="tab-content">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+                            <span style="font-size:0.85em;color:#6c757d;font-weight:600;">Mode:</span>
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85em;">
+                                <input type="radio" name="askMode" value="direct" id="modeDirectRadio" checked
+                                    onchange="updateAskModeHint()">
+                                <span style="font-weight:600;color:#4facfe;">Direct RAG</span>
+                                <span style="color:#6c757d;">(fast, ~2s)</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85em;">
+                                <input type="radio" name="askMode" value="pipeline" id="modePipelineRadio"
+                                    onchange="updateAskModeHint()">
+                                <span style="font-weight:600;color:#764ba2;">Full Pipeline</span>
+                                <span style="color:#6c757d;">(deep analysis, ~2min)</span>
+                            </label>
+                        </div>
+                        <div id="askModeHint" style="font-size:0.8em;color:#adb5bd;margin-bottom:8px;">
+                            Search → GPT synthesis in one call. Best for factual questions.
+                        </div>
+                        <div class="search-bar">
+                            <textarea class="search-input" id="askQuery" rows="2"
+                                placeholder="Ask a question about your documents… (Ctrl+Enter to submit)"></textarea>
+                            <button class="search-button" onclick="askQuestion()" id="askButton">Ask</button>
+                        </div>
+                        <div id="askStatus" style="font-size:0.88em;color:#6c757d;margin-bottom:12px;"></div>
+                        <div id="askOutput">
+                            <div class="search-empty">
+                                <div style="font-size:2.5em;margin-bottom:12px;">💬</div>
+                                <p>Ask any question and get a synthesized answer grounded in your documents.</p>
+                                <p style="font-size:0.85em;margin-top:8px;color:#adb5bd;">Powered by QueryReactor on port 8000</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search View -->
+                    <div id="searchView" class="tab-content">
+                        <div class="search-bar">
+                            <textarea class="search-input" id="searchQuery" rows="2"
+                                placeholder="Ask a question or enter keywords to search across your documents…"></textarea>
+                            <button class="search-button" onclick="searchChunks()">Search</button>
+                        </div>
+                        <div class="search-options">
+                            <label>Top K: <input type="number" id="searchTopK" value="10" min="1" max="50"></label>
+                            <label>Min score: <input type="number" id="searchThreshold" value="0.0" min="0" max="1" step="0.05"></label>
+                            <label><input type="checkbox" id="searchCurrentDoc"> Limit to current document</label>
+                        </div>
+                        <div id="searchResultsStats" style="font-size:0.88em;color:#6c757d;margin-bottom:12px;"></div>
+                        <div id="searchResults" class="search-results-list">
+                            <div class="search-empty">
+                                <div style="font-size:2.5em;margin-bottom:12px;">🔍</div>
+                                <p>Enter a query above to search across your documents.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -1395,6 +1694,217 @@
                 } else if (tabName === 'summary') {
                     loadSummary();
                 }
+            }
+        }
+
+        // Ask + Search Tab — Ctrl/Cmd+Enter submits
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('searchQuery').addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); searchChunks(); }
+            });
+            document.getElementById('askQuery').addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); askQuestion(); }
+            });
+        });
+
+        const QR_URL = 'http://localhost:8000';
+
+        function updateAskModeHint() {
+            const mode = document.querySelector('input[name="askMode"]:checked')?.value || 'direct';
+            const hint = document.getElementById('askModeHint');
+            if (mode === 'direct') {
+                hint.textContent = 'Search → GPT synthesis in one call. Best for factual questions.';
+            } else {
+                hint.textContent = 'Full M0–M12 pipeline with multi-hop reasoning. More thorough but slower.';
+            }
+        }
+
+        async function askQuestion() {
+            const question = document.getElementById('askQuery').value.trim();
+            if (!question) return;
+
+            const mode = document.querySelector('input[name="askMode"]:checked')?.value || 'direct';
+            const isDirect = mode === 'direct';
+
+            const askOutput = document.getElementById('askOutput');
+            const askStatus = document.getElementById('askStatus');
+            const askButton = document.getElementById('askButton');
+
+            askButton.disabled = true;
+            askButton.textContent = 'Thinking…';
+            askStatus.textContent = isDirect ? 'Searching knowledge base…' : 'Sending to QueryReactor pipeline…';
+            askOutput.innerHTML = '<div class="search-empty"><div style="font-size:2em;margin-bottom:8px;">⏳</div><p>Generating answer…</p></div>';
+
+            const t0 = Date.now();
+
+            try {
+                let data;
+
+                if (isDirect) {
+                    // Direct RAG: fast path
+                    const payload = { question, top_k: 10 };
+                    if (currentDocumentId) payload.doc_filter = currentDocumentId;
+
+                    const response = await fetch(`${QR_URL}/api/ask-direct`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.detail || `HTTP ${response.status}`);
+                    }
+                    const raw = await response.json();
+                    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+                    // Build sources HTML from direct sources
+                    let sourcesHtml = '';
+                    if (raw.sources && raw.sources.length > 0) {
+                        sourcesHtml = `<div class="ask-sources-label">Sources used (${raw.sources.length})</div>`;
+                        sourcesHtml += raw.sources.map(s => `
+                            <div class="ask-source-card">
+                                <div class="ask-source-path">${escapeHtml(s.section_path || s.doc_uuid || '')}</div>
+                                <div class="ask-source-content">${escapeHtml((s.content_preview || '').substring(0, 300))}</div>
+                                <div style="font-size:0.78em;color:#adb5bd;margin-top:4px;">score: ${s.score.toFixed(4)}</div>
+                            </div>
+                        `).join('');
+                    }
+
+                    askOutput.innerHTML = `
+                        <div class="ask-answer-label">
+                            Answer
+                            <span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.8em;margin-left:8px;">Direct RAG</span>
+                        </div>
+                        <div class="ask-answer-box">${escapeHtml(raw.answer || 'No answer returned.')}</div>
+                        ${sourcesHtml}
+                    `;
+                    askStatus.textContent = `Answered in ${elapsed}s`;
+
+                } else {
+                    // Full pipeline: /api/qa
+                    const response = await fetch(`${QR_URL}/api/qa`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question }),
+                    });
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.detail || `HTTP ${response.status}`);
+                    }
+                    data = await response.json();
+                    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+                    const confidence = data.confidence != null ? `${(data.confidence * 100).toFixed(0)}%` : null;
+                    const paths = data.metadata?.retrieval_paths_used?.join(', ') || '';
+                    const limitations = data.limitations?.length ? data.limitations : [];
+                    const citations = data.citations || [];
+
+                    let sourcesHtml = '';
+                    if (citations.length > 0) {
+                        sourcesHtml = `<div class="ask-sources-label">Sources used (${citations.length})</div>`;
+                        sourcesHtml += citations.map(c => `
+                            <div class="ask-source-card">
+                                <div class="ask-source-path">${escapeHtml(c.title || c.source || '')}</div>
+                                <div class="ask-source-content">${escapeHtml((c.content_preview || '').substring(0, 300))}</div>
+                            </div>
+                        `).join('');
+                    }
+
+                    askOutput.innerHTML = `
+                        <div class="ask-answer-label">
+                            Answer
+                            ${confidence ? `<span class="ask-confidence">${confidence} confidence</span>` : ''}
+                            <span style="background:#e8d5f5;color:#5a2d82;padding:2px 8px;border-radius:10px;font-size:0.8em;margin-left:4px;">Pipeline</span>
+                        </div>
+                        <div class="ask-answer-box">${escapeHtml(data.answer || 'No answer returned.')}</div>
+                        ${sourcesHtml}
+                        ${limitations.length ? `<div class="ask-limitations">⚠ ${limitations.map(l => escapeHtml(l)).join(' · ')}</div>` : ''}
+                        ${paths ? `<div class="ask-paths">Retrieval paths: ${escapeHtml(paths)}</div>` : ''}
+                    `;
+                    askStatus.textContent = `Answered in ${elapsed}s`;
+                }
+
+            } catch (error) {
+                askOutput.innerHTML = `
+                    <div class="ask-error">
+                        <strong>Could not reach QueryReactor.</strong><br>
+                        ${escapeHtml(error.message)}<br><br>
+                        Make sure QueryReactor is running: <code>python main.py server</code> in the QueryReactor directory.
+                    </div>`;
+                askStatus.textContent = '';
+            } finally {
+                askButton.disabled = false;
+                askButton.textContent = 'Ask';
+            }
+        }
+
+        async function searchChunks() {
+            const query = document.getElementById('searchQuery').value.trim();
+            if (!query) return;
+
+            const topK = parseInt(document.getElementById('searchTopK').value) || 10;
+            const threshold = parseFloat(document.getElementById('searchThreshold').value) || 0.0;
+            const limitToCurrent = document.getElementById('searchCurrentDoc').checked;
+
+            const searchResults = document.getElementById('searchResults');
+            const searchResultsStats = document.getElementById('searchResultsStats');
+
+            searchResults.innerHTML = '<div class="search-empty"><div style="font-size:2em;margin-bottom:8px;">⏳</div><p>Searching…</p></div>';
+            searchResultsStats.textContent = '';
+
+            const payload = {
+                query,
+                top_k: topK,
+                similarity_threshold: threshold,
+                neighbor_window: 1,
+            };
+            if (limitToCurrent && currentDocumentId) {
+                payload.doc_filter = currentDocumentId;
+            }
+
+            try {
+                const response = await fetch('/api/v1/chunks/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) throw new Error(`Search failed: ${response.statusText}`);
+
+                const data = await response.json();
+                const hits = data.hits || [];
+
+                searchResultsStats.textContent = `${hits.length} result${hits.length !== 1 ? 's' : ''} found`;
+
+                if (hits.length === 0) {
+                    searchResults.innerHTML = '<div class="search-empty"><div style="font-size:2.5em;margin-bottom:12px;">😶</div><p>No results found. Try a different query or lower the min score.</p></div>';
+                    return;
+                }
+
+                searchResults.innerHTML = hits.map((hit) => {
+                    const chunk = hit.chunk || {};
+                    const scorePct = ((hit.score || 0) * 100).toFixed(1);
+                    const content = (chunk.enriched_content || chunk.original_content || chunk.content || '').substring(0, 450);
+                    const section = (chunk.metadata && chunk.metadata.section_path) || '';
+                    const docId = chunk.doc_uuid || '';
+                    const chunkId = chunk.chunk_id || '';
+
+                    return `
+                        <div class="search-result-card">
+                            <div class="search-result-header">
+                                <span class="search-result-score">${scorePct}% match</span>
+                                <span class="search-result-meta">${escapeHtml(section || docId)}</span>
+                            </div>
+                            <div class="search-result-content">${escapeHtml(content)}</div>
+                            <div class="search-result-footer">
+                                doc: ${escapeHtml(docId)} &nbsp;·&nbsp; chunk: ${escapeHtml(chunkId)}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                searchResults.innerHTML = `<div class="error-message">Search failed: ${error.message}</div>`;
             }
         }
 
