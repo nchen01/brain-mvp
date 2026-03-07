@@ -1743,7 +1743,6 @@
                 if (isDirect) {
                     // Direct RAG: fast path
                     const payload = { question, top_k: 10 };
-                    if (currentDocumentId) payload.doc_filter = currentDocumentId;
 
                     const response = await fetch(`${QR_URL}/api/ask-direct`, {
                         method: 'POST',
